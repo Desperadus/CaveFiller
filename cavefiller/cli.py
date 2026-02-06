@@ -45,15 +45,25 @@ def run(
         None,
         help="Comma-separated list of water counts per cavity (e.g., '10,15,20'). Must match cavity_ids order.",
     ),
+    optimize_mmff94: bool = typer.Option(
+        True,
+        "--optimize-mmff94/--no-optimize-mmff94",
+        help="Run MMFF94 after placement with protein atoms fixed and waters movable.",
+    ),
+    mmff_max_iterations: int = typer.Option(
+        300,
+        help="Maximum MMFF94 iterations when optimization is enabled.",
+    ),
 ):
     """
-    Find cavities in a protein and fill them with water molecules.
-    
+    Find cavities in a protein and fill them with explicit water molecules.
+
     This tool performs the following steps:
     1. Detects cavities in the protein using KVFinder
     2. Allows user to select which cavities to fill
-    3. Uses Monte Carlo sampling to place waters in cavities
-    4. Optimizes water positions using MMFF94 force field
+    3. Uses cavity-grid Monte Carlo sampling to place water oxygens
+    4. Optionally runs MMFF94 with protein fixed and waters movable
+    5. Builds explicit RDKit H-O-H waters and writes a combined PDB
     """
     typer.echo(f"🔍 Analyzing protein: {protein_file}")
     
@@ -114,15 +124,17 @@ def run(
     
     typer.echo(f"✅ Selected {len(selected_cavities)} cavities")
     
-    # Step 3: Fill cavities with water using Monte Carlo and MMFF94
+    # Step 3: Fill cavities with water
     typer.echo("\nStep 3: Filling cavities with water using Monte Carlo sampling...")
-    typer.echo("         (with clash detection and MMFF94 optimization)")
+    typer.echo("         (with clash detection, optional fixed-protein MMFF94, and RDKit HOH generation)")
     output_file = fill_cavities_with_water(
         str(protein_file),
         selected_cavities,
         cavity_data,
         str(output_dir),
         waters_per_cavity=waters_dict,
+        optimize_mmff94=optimize_mmff94,
+        mmff_max_iterations=mmff_max_iterations,
     )
     
     typer.echo(f"\n✅ Success! Output saved to: {output_file}")

@@ -96,12 +96,19 @@ def get_cavity_grid_points(cavity_data: Any, cavity_id: int) -> np.ndarray:
     # Note: KVFinder uses 1-indexed cavity IDs in the grid
     points = np.argwhere(cavity_grid == cavity_id)
     
-    # Convert grid indices to real coordinates
-    # KVFinder results have P1, P2, P3, P4 attributes for grid parameters
-    if hasattr(cavity_data, 'surface') and hasattr(cavity_data.surface, 'P1'):
-        # P1 is the origin, step is the grid spacing
-        origin = np.array([cavity_data.surface.P1[i] for i in range(3)])
-        real_coords = origin + points * DEFAULT_GRID_STEP
-        return real_coords
-    
+    # Convert grid indices to real coordinates if origin metadata is available.
+    # Different pyKVFinder versions expose metadata on either cavity_data or cavity_data.surface.
+    step = getattr(cavity_data, "step", DEFAULT_GRID_STEP)
+    origin = None
+
+    if hasattr(cavity_data, "surface") and hasattr(cavity_data.surface, "P1"):
+        origin = np.array([cavity_data.surface.P1[i] for i in range(3)], dtype=float)
+    elif hasattr(cavity_data, "P1"):
+        origin = np.array([cavity_data.P1[i] for i in range(3)], dtype=float)
+
+    points = points.astype(float)
+    if origin is not None:
+        return origin + points * float(step)
+
+    # Fallback: return index-space points; downstream code will align to protein frame.
     return points

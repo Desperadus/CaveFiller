@@ -1,14 +1,14 @@
 # CaveFiller
 
-A Python tool to find and fill protein cavities with water molecules using KVFinder, Monte Carlo sampling, and MMFF94 optimization.
+A Python tool to find and fill protein cavities with water molecules using KVFinder, Monte Carlo sampling, and RDKit-based explicit water generation.
 
 ## Features
 
-- 🔍 **Cavity Detection**: Uses pyKVFinder to detect cavities in protein structures
-- 🎯 **Interactive Selection**: Select specific cavities to fill or auto-select all
-- 🎲 **Monte Carlo Sampling**: Places water molecules using Monte Carlo sampling with clash detection
-- ⚛️ **MMFF94 Optimization**: Optimizes water positions using RDKit's MMFF94 force field
-- 🖥️ **CLI Interface**: Easy-to-use command-line interface built with Typer
+-  **Cavity Detection**: Uses pyKVFinder to detect cavities in protein structures
+-  **Interactive Selection**: Select specific cavities to fill or auto-select all
+-  **Monte Carlo Sampling**: Places water molecules using Monte Carlo sampling with clash detection
+-  **Explicit Waters**: Builds full H-O-H waters with RDKit (including hydrogens)
+-  **CLI Interface**: Easy-to-use command-line interface built with Typer
 
 ## Installation
 
@@ -41,7 +41,7 @@ This will:
 3. Prompt you to select which cavities to fill
 4. Prompt you for the number of water molecules per cavity
 5. Place waters using Monte Carlo sampling with clash detection
-6. Optimize water positions using MMFF94 force field
+6. Build explicit RDKit H-O-H waters and export a combined PDB
 7. Save the output to `./output/protein_filled.pdb`
 
 ### Command-line Options
@@ -61,6 +61,8 @@ cavefiller [PROTEIN_FILE] [OPTIONS]
 - `--auto-select`: Automatically select all cavities without user interaction
 - `--cavity-ids TEXT`: Comma-separated list of cavity IDs to fill (e.g., '1,2,3')
 - `--waters-per-cavity TEXT`: Comma-separated list of water counts (e.g., '10,15,20'), must match cavity-ids order
+- `--optimize-mmff94 / --no-optimize-mmff94`: Enable/disable MMFF94 with protein fixed (default: enabled)
+- `--mmff-max-iterations INTEGER`: Max MMFF94 iterations (default: 300)
 
 ### Examples
 
@@ -96,43 +98,40 @@ cavefiller protein.pdb --probe-in 1.2 --probe-out 5.0 --volume-cutoff 10.0
    - Monte Carlo sampling places waters randomly in cavity
    - Clash detection validates each position against protein atoms and other waters
    - Uses Van der Waals radii for distance calculations
-5. **MMFF94 Optimization**:
-   - Waters are optimized using RDKit's MMFF94 force field
-   - Ensures reasonable geometry and hydrogen bonding
-   - Waters that drift outside cavity are filtered out
+5. **RDKit Water Construction**:
+   - Explicit H-O-H waters are generated with ideal geometry
+   - Waters include hydrogens and proper HOH residue records in the output PDB
 
 ## Algorithm Details
 
 ### Monte Carlo Sampling
-- Randomly samples positions within cavity bounding box
-- Validates position is within cavity (< 1.5 Å from cavity grid point)
+- Samples around cavity grid points with small local jitter
+- Validates position stays near cavity voxels (< 0.7 Å from a grid point)
 - Checks for clashes with protein atoms (minimum distance based on VDW radii)
-- Checks for clashes with other waters (minimum 2.8 Å separation)
-- Attempts up to 1000 placements per water molecule
+- Checks for clashes with other waters (minimum 2.7 Å separation)
+- Attempts up to 500 placements per water molecule
 
 ### Clash Detection
 - Uses Van der Waals radii for different atom types (H, C, N, O, S, P)
-- Minimum water-protein distance: 2.4 Å
-- Minimum water-water distance: 2.8 Å
+- Minimum water-protein distance: 2.35 Å
+- Minimum water-water distance: 2.7 Å
 - Tolerance of 0.5 Å for VDW overlap
 
-### MMFF94 Optimization
+### RDKit Water Geometry
 - Creates proper H-O-H geometry for each water
-- Optimizes all waters simultaneously
-- Maximum 200 iterations per optimization
-- Filters waters that move > 2.0 Å from cavity
+- Writes explicit HOH residues (O, H1, H2) into output PDB
 
 ## Output
 
 The tool generates the following files in the output directory:
 
-- `protein_filled.pdb`: Protein structure with optimized water molecules in selected cavities
+- `protein_filled.pdb`: Protein structure with explicit water molecules in selected cavities
 
 ## Dependencies
 
 - **typer**: CLI framework
 - **pyKVFinder**: Cavity detection
-- **rdkit**: Molecular manipulation and MMFF94 optimization
+- **rdkit**: Molecular manipulation and explicit water generation
 - **numpy**: Numerical operations
 - **biopython**: PDB file handling
 

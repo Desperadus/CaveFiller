@@ -55,8 +55,10 @@ cavefiller [PROTEIN_FILE] [OPTIONS]
 
 **Options:**
 - `--output-dir PATH`: Directory to save output files (default: `./output`)
+- `--grid-step FLOAT`: Grid spacing for cavity detection in Ångströms (default: 0.6)
 - `--probe-in FLOAT`: Probe In radius for cavity detection in Ångströms (default: 1.4)
 - `--probe-out FLOAT`: Probe Out radius for cavity detection in Ångströms (default: 4.0)
+- `--exterior-trim-distance FLOAT`: Exterior trim distance in Ångströms (default: 2.4)
 - `--volume-cutoff FLOAT`: Minimum cavity volume to consider in Ų (default: 5.0)
 - `--auto-select`: Automatically select all cavities without user interaction
 - `--cavity-ids TEXT`: Comma-separated list of cavity IDs to fill (e.g., '1,2,3')
@@ -87,7 +89,7 @@ cavefiller protein.pdb --cavity-ids "1,3,5" --waters-per-cavity "10,15,20"
 
 **Custom cavity detection parameters:**
 ```bash
-cavefiller protein.pdb --probe-in 1.2 --probe-out 5.0 --volume-cutoff 10.0
+cavefiller protein.pdb --grid-step 0.6 --probe-in 1.4 --probe-out 4.0 --exterior-trim-distance 2.4 --volume-cutoff 5.0
 ```
 
 ## Workflow

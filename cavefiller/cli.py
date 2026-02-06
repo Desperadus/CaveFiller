@@ -2,8 +2,15 @@
 
 import typer
 from pathlib import Path
-from typing import Optional, List
-from cavefiller.cavity_finder import find_cavities
+from typing import Optional
+from cavefiller.cavity_finder import (
+    find_cavities,
+    DEFAULT_GRID_STEP,
+    DEFAULT_PROBE_IN,
+    DEFAULT_PROBE_OUT,
+    DEFAULT_EXTERIOR_TRIM_DISTANCE,
+    DEFAULT_VOLUME_CUTOFF,
+)
 from cavefiller.cavity_selector import select_cavities
 from cavefiller.water_filler import fill_cavities_with_water
 
@@ -21,16 +28,26 @@ def run(
         Path("./output"),
         help="Directory to save output files",
     ),
+    grid_step: float = typer.Option(
+        DEFAULT_GRID_STEP,
+        "--grid-step",
+        help="Grid spacing for cavity detection (Å)",
+    ),
     probe_in: float = typer.Option(
-        1.4,
+        DEFAULT_PROBE_IN,
         help="Probe In radius for cavity detection (Å)",
     ),
     probe_out: float = typer.Option(
-        4.0,
+        DEFAULT_PROBE_OUT,
         help="Probe Out radius for cavity detection (Å)",
     ),
+    exterior_trim_distance: float = typer.Option(
+        DEFAULT_EXTERIOR_TRIM_DISTANCE,
+        "--exterior-trim-distance",
+        help="Exterior trim distance (KVFinder removal distance) (Å)",
+    ),
     volume_cutoff: float = typer.Option(
-        5.0,
+        DEFAULT_VOLUME_CUTOFF,
         help="Minimum cavity volume to consider (Å³)",
     ),
     auto_select: bool = typer.Option(
@@ -74,8 +91,10 @@ def run(
     typer.echo("Step 1: Finding cavities with KVFinder...")
     cavities, cavity_data = find_cavities(
         str(protein_file),
+        step=grid_step,
         probe_in=probe_in,
         probe_out=probe_out,
+        removal_distance=exterior_trim_distance,
         volume_cutoff=volume_cutoff,
         output_dir=str(output_dir),
     )

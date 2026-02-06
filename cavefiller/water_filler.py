@@ -51,6 +51,7 @@ def fill_cavities_with_water(
 
     for cavity in selected_cavities:
         cavity_id = cavity["id"]
+        cavity_grid_id = int(cavity.get("grid_id", cavity_id))
         volume = cavity["volume"]
 
         if waters_per_cavity and cavity_id in waters_per_cavity:
@@ -63,9 +64,12 @@ def fill_cavities_with_water(
             f"(volume: {volume:.2f} A^3)..."
         )
 
-        cavity_points = get_cavity_grid_points(cavity_data, cavity_id)
+        cavity_points = get_cavity_grid_points(cavity_data, cavity_grid_id)
         if len(cavity_points) == 0:
-            print(f"  Warning: no grid points found for cavity {cavity_id}")
+            print(
+                f"  Warning: no grid points found for cavity {cavity_id} "
+                f"(grid label {cavity_grid_id})"
+            )
             continue
 
         cavity_points = _ensure_cavity_points_near_protein(cavity_points, protein_atoms)

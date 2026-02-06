@@ -41,6 +41,10 @@ def run(
         None,
         help="Comma-separated list of cavity IDs to fill (e.g., '1,2,3'). If not provided, user will be prompted.",
     ),
+    waters_per_cavity: Optional[str] = typer.Option(
+        None,
+        help="Comma-separated list of water counts per cavity (e.g., '10,15,20'). Must match cavity_ids order.",
+    ),
 ):
     """
     Find cavities in a protein and fill them with water molecules.
@@ -48,7 +52,8 @@ def run(
     This tool performs the following steps:
     1. Detects cavities in the protein using KVFinder
     2. Allows user to select which cavities to fill
-    3. Uses Packmol to fill selected cavities with water molecules
+    3. Uses Monte Carlo sampling to place waters in cavities
+    4. Optimizes water positions using MMFF94 force field
     """
     typer.echo(f"🔍 Analyzing protein: {protein_file}")
     
@@ -74,6 +79,8 @@ def run(
     # Step 2: Select cavities to fill
     typer.echo("\nStep 2: Selecting cavities to fill...")
     
+    waters_dict = {}
+    
     if cavity_ids:
         # Parse cavity IDs from command line
         selected_ids = [int(x.strip()) for x in cavity_ids.split(",")]
@@ -81,13 +88,25 @@ def run(
         if not selected_cavities:
             typer.echo(f"❌ No cavities found with IDs: {cavity_ids}", err=True)
             raise typer.Exit(code=1)
+        
+        # Parse waters per cavity if provided
+        if waters_per_cavity:
+            water_counts = [int(x.strip()) for x in waters_per_cavity.split(",")]
+            if len(water_counts) != len(selected_ids):
+                typer.echo("❌ Number of water counts must match number of cavity IDs", err=True)
+                raise typer.Exit(code=1)
+            waters_dict = dict(zip(selected_ids, water_counts))
+            
     elif auto_select:
         # Auto-select all cavities
         selected_cavities = cavities
         typer.echo(f"Auto-selecting all {len(cavities)} cavities")
+        # Use default water counts
+        for cavity in selected_cavities:
+            waters_dict[cavity['id']] = max(1, int(cavity['volume'] / 30))
     else:
         # Interactive selection
-        selected_cavities = select_cavities(cavities)
+        selected_cavities, waters_dict = select_cavities(cavities, prompt_for_waters=True)
     
     if not selected_cavities:
         typer.echo("❌ No cavities selected.", err=True)
@@ -95,16 +114,18 @@ def run(
     
     typer.echo(f"✅ Selected {len(selected_cavities)} cavities")
     
-    # Step 3: Fill cavities with water
-    typer.echo("\nStep 3: Filling cavities with water using Packmol...")
+    # Step 3: Fill cavities with water using Monte Carlo and MMFF94
+    typer.echo("\nStep 3: Filling cavities with water using Monte Carlo sampling...")
+    typer.echo("         (with clash detection and MMFF94 optimization)")
     output_file = fill_cavities_with_water(
         str(protein_file),
         selected_cavities,
         cavity_data,
         str(output_dir),
+        waters_per_cavity=waters_dict,
     )
     
-    typer.echo(f"✅ Success! Output saved to: {output_file}")
+    typer.echo(f"\n✅ Success! Output saved to: {output_file}")
     typer.echo("\n🎉 CaveFiller completed successfully!")
 
 

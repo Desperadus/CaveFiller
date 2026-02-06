@@ -4,6 +4,7 @@ import pytest
 import os
 import tempfile
 from pathlib import Path
+import numpy as np
 
 
 def create_simple_protein_pdb(filepath):
@@ -49,27 +50,79 @@ def test_cavity_finder_with_small_protein():
         # cavity_data may be None if no cavities are found
 
 
-def test_water_template_creation():
-    """Test that water template can be created."""
-    from cavefiller.water_filler import create_water_template
+def test_read_protein_atoms():
+    """Test reading protein atoms from PDB file."""
+    from cavefiller.water_filler import read_protein_atoms
     
     with tempfile.TemporaryDirectory() as tmpdir:
-        water_file = create_water_template(tmpdir)
-        assert os.path.exists(water_file)
+        pdb_file = os.path.join(tmpdir, "test.pdb")
+        create_simple_protein_pdb(pdb_file)
         
-        with open(water_file, 'r') as f:
-            content = f.read()
-            assert 'HOH' in content
-            assert 'HETATM' in content
+        atoms = read_protein_atoms(pdb_file)
+        
+        assert len(atoms) > 0
+        # Check structure: list of (element, coordinates)
+        for element, coords in atoms:
+            assert isinstance(element, str)
+            assert isinstance(coords, np.ndarray)
+            assert len(coords) == 3
 
 
-def test_packmol_availability_check():
-    """Test packmol availability check."""
-    from cavefiller.water_filler import is_packmol_available
+def test_clash_detection():
+    """Test clash detection function."""
+    from cavefiller.water_filler import check_clash
     
-    # This will be False in most test environments
-    result = is_packmol_available()
-    assert isinstance(result, bool)
+    # Create some protein atoms
+    protein_atoms = [
+        ('C', np.array([0.0, 0.0, 0.0])),
+        ('N', np.array([5.0, 0.0, 0.0])),
+    ]
+    
+    # Test position too close to protein (should clash)
+    close_pos = np.array([0.5, 0.0, 0.0])
+    assert check_clash(close_pos, protein_atoms, []) == True
+    
+    # Test position far from protein (no clash)
+    far_pos = np.array([10.0, 10.0, 10.0])
+    assert check_clash(far_pos, protein_atoms, []) == False
+    
+    # Test position close to another water (should clash)
+    water_pos = np.array([3.0, 3.0, 3.0])
+    existing_waters = [np.array([3.5, 3.0, 3.0])]
+    assert check_clash(water_pos, [], existing_waters) == True
+
+
+def test_monte_carlo_placement():
+    """Test Monte Carlo water placement."""
+    from cavefiller.water_filler import monte_carlo_water_placement
+    
+    # Create a simple cavity (grid of points)
+    cavity_points = np.array([
+        [10.0, 10.0, 10.0],
+        [10.5, 10.0, 10.0],
+        [10.0, 10.5, 10.0],
+        [10.0, 10.0, 10.5],
+        [11.0, 10.0, 10.0],
+        [10.0, 11.0, 10.0],
+        [10.0, 10.0, 11.0],
+    ])
+    
+    # No protein atoms nearby
+    protein_atoms = [
+        ('C', np.array([0.0, 0.0, 0.0])),
+    ]
+    
+    # Try to place 2 waters
+    waters = monte_carlo_water_placement(cavity_points, protein_atoms, 2, max_attempts=100)
+    
+    # Should be able to place at least one water
+    assert len(waters) >= 1
+    assert len(waters) <= 2
+    
+    # Check that waters are numpy arrays
+    for water in waters:
+        assert isinstance(water, np.ndarray)
+        assert len(water) == 3
 
 
 def test_cli_app_exists():
@@ -110,9 +163,9 @@ def test_cavity_with_example_protein():
             assert cavity['volume'] >= 5.0
 
 
-def test_simple_water_filling():
-    """Test simple water filling method."""
-    from cavefiller.water_filler import fill_with_simple_placement
+def test_monte_carlo_water_filling():
+    """Test Monte Carlo water filling method."""
+    from cavefiller.water_filler import fill_cavities_with_water
     from cavefiller.cavity_finder import find_cavities
     
     example_pdb = "examples/protein_with_cavity.pdb"
@@ -130,18 +183,18 @@ def test_simple_water_filling():
         if len(cavities) == 0:
             pytest.skip("No cavities found in test protein")
         
-        # Fill with water
-        output_file = os.path.join(tmpdir, "filled.pdb")
-        result = fill_with_simple_placement(
+        # Fill with water using Monte Carlo
+        output_file = fill_cavities_with_water(
             example_pdb,
             cavities[:1],  # Just first cavity
             cavity_data,
-            output_file,
+            tmpdir,
+            waters_per_cavity={cavities[0]['id']: 5}  # Place 5 waters
         )
         
-        assert os.path.exists(result)
+        assert os.path.exists(output_file)
         
         # Check that water was added
-        with open(result, 'r') as f:
+        with open(output_file, 'r') as f:
             content = f.read()
-            assert 'HOH' in content or 'WAT' in content
+            assert 'HOH' in content

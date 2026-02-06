@@ -1,12 +1,13 @@
 # CaveFiller
 
-A Python tool to find and fill protein cavities with water molecules using KVFinder and Packmol.
+A Python tool to find and fill protein cavities with water molecules using KVFinder, Monte Carlo sampling, and MMFF94 optimization.
 
 ## Features
 
 - 🔍 **Cavity Detection**: Uses pyKVFinder to detect cavities in protein structures
 - 🎯 **Interactive Selection**: Select specific cavities to fill or auto-select all
-- 💧 **Water Filling**: Fills selected cavities with water molecules using Packmol
+- 🎲 **Monte Carlo Sampling**: Places water molecules using Monte Carlo sampling with clash detection
+- ⚛️ **MMFF94 Optimization**: Optimizes water positions using RDKit's MMFF94 force field
 - 🖥️ **CLI Interface**: Easy-to-use command-line interface built with Typer
 
 ## Installation
@@ -14,7 +15,6 @@ A Python tool to find and fill protein cavities with water molecules using KVFin
 ### Prerequisites
 
 1. **Python**: Python 3.8 or higher
-2. **Packmol** (optional but recommended): Install from [Packmol website](http://m3g.iqm.unicamp.br/packmol/home.shtml)
 
 ### Install CaveFiller
 
@@ -39,8 +39,10 @@ This will:
 1. Detect cavities in `protein.pdb`
 2. Display a list of found cavities with their volumes and areas
 3. Prompt you to select which cavities to fill
-4. Fill the selected cavities with water molecules
-5. Save the output to `./output/protein_filled.pdb`
+4. Prompt you for the number of water molecules per cavity
+5. Place waters using Monte Carlo sampling with clash detection
+6. Optimize water positions using MMFF94 force field
+7. Save the output to `./output/protein_filled.pdb`
 
 ### Command-line Options
 
@@ -58,22 +60,23 @@ cavefiller [PROTEIN_FILE] [OPTIONS]
 - `--volume-cutoff FLOAT`: Minimum cavity volume to consider in Ų (default: 5.0)
 - `--auto-select`: Automatically select all cavities without user interaction
 - `--cavity-ids TEXT`: Comma-separated list of cavity IDs to fill (e.g., '1,2,3')
+- `--waters-per-cavity TEXT`: Comma-separated list of water counts (e.g., '10,15,20'), must match cavity-ids order
 
 ### Examples
 
-**Interactive cavity selection:**
+**Interactive cavity and water selection:**
 ```bash
 cavefiller protein.pdb --output-dir results
 ```
 
-**Auto-select all cavities:**
+**Auto-select all cavities with default water counts:**
 ```bash
 cavefiller protein.pdb --auto-select
 ```
 
-**Fill specific cavities:**
+**Fill specific cavities with specific water counts:**
 ```bash
-cavefiller protein.pdb --cavity-ids "1,3,5"
+cavefiller protein.pdb --cavity-ids "1,3,5" --waters-per-cavity "10,15,20"
 ```
 
 **Custom cavity detection parameters:**
@@ -86,30 +89,52 @@ cavefiller protein.pdb --probe-in 1.2 --probe-out 5.0 --volume-cutoff 10.0
 1. **Cavity Detection**: The tool uses pyKVFinder to detect cavities in the input protein structure
 2. **Cavity Analysis**: Displays information about detected cavities (ID, volume, surface area)
 3. **Cavity Selection**: 
-   - Interactive mode: User selects cavities by entering IDs
-   - Auto mode: All cavities are selected automatically
-   - Command-line mode: Specific cavities are pre-selected
-4. **Water Filling**: 
-   - If Packmol is available: Uses Packmol to optimally pack water molecules
-   - Fallback mode: Uses simple grid-based water placement
+   - Interactive mode: User selects cavities and specifies water counts
+   - Auto mode: All cavities are selected with automatic water count estimation
+   - Command-line mode: Specific cavities and water counts are pre-selected
+4. **Water Placement**: 
+   - Monte Carlo sampling places waters randomly in cavity
+   - Clash detection validates each position against protein atoms and other waters
+   - Uses Van der Waals radii for distance calculations
+5. **MMFF94 Optimization**:
+   - Waters are optimized using RDKit's MMFF94 force field
+   - Ensures reasonable geometry and hydrogen bonding
+   - Waters that drift outside cavity are filtered out
+
+## Algorithm Details
+
+### Monte Carlo Sampling
+- Randomly samples positions within cavity bounding box
+- Validates position is within cavity (< 1.5 Å from cavity grid point)
+- Checks for clashes with protein atoms (minimum distance based on VDW radii)
+- Checks for clashes with other waters (minimum 2.8 Å separation)
+- Attempts up to 1000 placements per water molecule
+
+### Clash Detection
+- Uses Van der Waals radii for different atom types (H, C, N, O, S, P)
+- Minimum water-protein distance: 2.4 Å
+- Minimum water-water distance: 2.8 Å
+- Tolerance of 0.5 Å for VDW overlap
+
+### MMFF94 Optimization
+- Creates proper H-O-H geometry for each water
+- Optimizes all waters simultaneously
+- Maximum 200 iterations per optimization
+- Filters waters that move > 2.0 Å from cavity
 
 ## Output
 
 The tool generates the following files in the output directory:
 
-- `protein_filled.pdb`: Protein structure with water molecules in selected cavities
-- `cavities.toml`: Detailed cavity detection results from KVFinder
-- `packmol.inp`: Packmol input file (if using Packmol)
-- `water.pdb`: Water molecule template (if using Packmol)
+- `protein_filled.pdb`: Protein structure with optimized water molecules in selected cavities
 
 ## Dependencies
 
 - **typer**: CLI framework
 - **pyKVFinder**: Cavity detection
-- **rdkit**: Molecular manipulation
+- **rdkit**: Molecular manipulation and MMFF94 optimization
 - **numpy**: Numerical operations
 - **biopython**: PDB file handling
-- **Packmol** (optional): Optimal water molecule packing
 
 ## Development
 
@@ -136,7 +161,7 @@ See LICENSE file for details.
 If you use CaveFiller in your research, please cite:
 
 - pyKVFinder: Guerra et al. (2020) BMC Bioinformatics
-- Packmol: Martínez et al. (2009) J. Comput. Chem.
+- RDKit: RDKit: Open-source cheminformatics; http://www.rdkit.org
 
 ## Contributing
 

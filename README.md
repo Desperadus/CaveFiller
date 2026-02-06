@@ -77,7 +77,7 @@ cavefiller [PROTEIN_FILE] [OPTIONS]
 - `--auto-select`: Automatically select all cavities without user interaction
 - `--cavity-ids TEXT`: Comma-separated list of cavity IDs to fill (e.g., '1,2,3')
 - `--waters-per-cavity TEXT`: Comma-separated list of water counts (e.g., '10,15,20'), must match cavity-ids order
-- `--optimize-mmff94 / --no-optimize-mmff94`: Enable/disable MMFF94 with protein fixed (default: enabled)
+- `--optimize-mmff94 / --no-optimize-mmff94`: Enable/disable MMFF94 with protein fixed - Note IT IS VERY SLOW ON BIGGER COMPLEXES (default: enabled)
 - `--mmff-max-iterations INTEGER`: Max MMFF94 iterations (default: 300)
 - `--remove-after-optim / --no-remove-after-optim`: After MMFF94, remove waters that fail post-checks (these chacks are fairly harsh so I actually recommend to use no-remove) (default: enabled)
   - Also accepted: `--remove_after_optim / --no_remove_after_optim`

@@ -61,6 +61,7 @@ cavefiller examples/musM_OBP5_model_0_boltz2.pdb --output-dir examples/output
 Notes:
 - Prefer manual cavity selection and manual water counts. `--auto-select` often places too many waters.
 - Keep MMFF94 optimization enabled (`--optimize-mmff94`, default) for better final geometries.
+- To keep every optimized water without post-MMFF filtering, use `--no-remove-after-optim` (or `--no_remove_after_optim`).
 
 ## Expected Output
 

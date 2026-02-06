@@ -215,6 +215,7 @@ def test_fill_cavities_uses_mmff94_optimizer(monkeypatch):
             water_origin_cavity_points,
             protein_atoms,
             max_iterations,
+            remove_after_optim,
         ):
             called["value"] = True
             called["max_iterations"] = max_iterations
@@ -234,4 +235,47 @@ def test_fill_cavities_uses_mmff94_optimizer(monkeypatch):
 
         assert called["value"] is True
         assert called["max_iterations"] == 123
+        assert os.path.exists(output_file)
+
+
+def test_fill_cavities_passes_remove_after_optim_flag(monkeypatch):
+    """Test that fill_cavities_with_water forwards remove_after_optim to MMFF stage."""
+    from cavefiller.cavity_finder import find_cavities
+    from cavefiller import water_filler as wf
+
+    if not EXAMPLE_PDB.exists():
+        pytest.skip("Example protein file not found")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cavities, cavity_data = find_cavities(str(EXAMPLE_PDB), output_dir=tmpdir)
+        if len(cavities) == 0:
+            pytest.skip("No cavities found in test protein")
+
+        called = {"remove_after_optim": None}
+        real_builder = wf._build_water_geometries_from_positions
+
+        def fake_optimize(
+            protein_mol,
+            water_positions,
+            water_origin_cavity_points,
+            protein_atoms,
+            max_iterations,
+            remove_after_optim,
+        ):
+            called["remove_after_optim"] = remove_after_optim
+            return water_positions, real_builder(water_positions, protein_atoms)
+
+        monkeypatch.setattr(wf, "optimize_waters_mmff94_fixed_protein", fake_optimize)
+
+        output_file = wf.fill_cavities_with_water(
+            str(EXAMPLE_PDB),
+            cavities[:1],
+            cavity_data,
+            tmpdir,
+            waters_per_cavity={cavities[0]["id"]: 2},
+            optimize_mmff94=True,
+            remove_after_optim=False,
+        )
+
+        assert called["remove_after_optim"] is False
         assert os.path.exists(output_file)

@@ -30,6 +30,46 @@ HOH_ANGLE_DEG = 104.52
 DEFAULT_MMFF_MAX_ITERS = 300
 
 
+def _run_mmff_with_progress(ff: Any, max_iterations: int) -> None:
+    """Run MMFF minimization while reporting per-step progress."""
+    if max_iterations <= 0:
+        return
+
+    try:
+        from tqdm import tqdm  # type: ignore
+    except Exception:
+        tqdm = None
+
+    converged = False
+    if tqdm is not None:
+        with tqdm(total=max_iterations, desc="MMFF94", unit="iter") as bar:
+            for _step in range(1, max_iterations + 1):
+                # RDKit returns 0 on convergence, non-zero otherwise.
+                status = ff.Minimize(maxIts=1)
+                bar.update(1)
+                if status == 0:
+                    converged = True
+                    break
+            if converged:
+                bar.set_postfix_str("converged")
+            else:
+                bar.set_postfix_str("max iters")
+    else:
+        print(f"MMFF94 optimization progress: 0/{max_iterations}")
+        for step in range(1, max_iterations + 1):
+            status = ff.Minimize(maxIts=1)
+            if step == 1 or step % 10 == 0 or step == max_iterations or status == 0:
+                print(f"MMFF94 optimization progress: {step}/{max_iterations}")
+            if status == 0:
+                converged = True
+                break
+
+    if converged:
+        print("MMFF94 optimization converged before max iterations")
+    else:
+        print("MMFF94 optimization reached max iterations")
+
+
 def fill_cavities_with_water(
     protein_file: str,
     selected_cavities: List[Dict[str, Any]],
@@ -38,6 +78,7 @@ def fill_cavities_with_water(
     waters_per_cavity: Dict[int, int] = None,
     optimize_mmff94: bool = True,
     mmff_max_iterations: int = DEFAULT_MMFF_MAX_ITERS,
+    remove_after_optim: bool = True,
 ) -> str:
     """Place explicit waters in selected cavities and write a combined PDB."""
     base_name = os.path.splitext(os.path.basename(protein_file))[0]
@@ -109,12 +150,19 @@ def fill_cavities_with_water(
                 water_origin_cavity_points=all_water_origin_cavity_points,
                 protein_atoms=protein_atoms,
                 max_iterations=mmff_max_iterations,
+                remove_after_optim=remove_after_optim,
             )
             if optimized_positions:
-                print(
-                    f"MMFF94 (fixed protein) kept {len(optimized_positions)}/"
-                    f"{len(all_water_positions)} waters after filtering"
-                )
+                if remove_after_optim:
+                    print(
+                        f"MMFF94 (fixed protein) kept {len(optimized_positions)}/"
+                        f"{len(all_water_positions)} waters after filtering"
+                    )
+                else:
+                    print(
+                        f"MMFF94 (fixed protein) kept all {len(optimized_positions)} waters "
+                        "without post-optimization filtering"
+                    )
                 optimized_waters_mol = build_waters_mol(
                     water_positions=[],
                     chain_id="W",
@@ -282,6 +330,7 @@ def optimize_waters_mmff94_fixed_protein(
     water_origin_cavity_points: List[np.ndarray],
     protein_atoms: List[Tuple[str, np.ndarray]],
     max_iterations: int = DEFAULT_MMFF_MAX_ITERS,
+    remove_after_optim: bool = True,
 ) -> Tuple[List[np.ndarray], List[Tuple[np.ndarray, np.ndarray, np.ndarray]]]:
     """MMFF94 optimize waters with protein atoms fixed in place."""
     if not water_positions:
@@ -332,7 +381,7 @@ def optimize_waters_mmff94_fixed_protein(
             ff.AddFixedPoint(atom_idx)
 
         ff.Initialize()
-        ff.Minimize(maxIts=max_iterations)
+        _run_mmff_with_progress(ff, max_iterations)
 
         conf = work_mol.GetConformer()
         optimized_geometries = []
@@ -350,6 +399,9 @@ def optimize_waters_mmff94_fixed_protein(
                     np.array([float(h2.x), float(h2.y), float(h2.z)], dtype=float),
                 )
             )
+
+        if not remove_after_optim:
+            return [geom[0] for geom in optimized_geometries], optimized_geometries
 
         selected_geometries = _select_valid_geometries_after_mmff(
             optimized_geometries=optimized_geometries,

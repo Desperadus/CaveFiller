@@ -71,6 +71,15 @@ def run(
         300,
         help="Maximum MMFF94 iterations when optimization is enabled.",
     ),
+    remove_after_optim: bool = typer.Option(
+        True,
+        "--remove-after-optim/--no-remove-after-optim",
+        "--remove_after_optim/--no_remove_after_optim",
+        help=(
+            "After MMFF94, remove waters that fail cavity/clash validation. "
+            "Disable to keep all optimized waters."
+        ),
+    ),
 ):
     """
     Find cavities in a protein and fill them with explicit water molecules.
@@ -154,6 +163,7 @@ def run(
         waters_per_cavity=waters_dict,
         optimize_mmff94=optimize_mmff94,
         mmff_max_iterations=mmff_max_iterations,
+        remove_after_optim=remove_after_optim,
     )
     
     typer.echo(f"\n✅ Success! Output saved to: {output_file}")

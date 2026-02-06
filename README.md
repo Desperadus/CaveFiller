@@ -65,10 +65,13 @@ cavefiller [PROTEIN_FILE] [OPTIONS]
 - `--waters-per-cavity TEXT`: Comma-separated list of water counts (e.g., '10,15,20'), must match cavity-ids order
 - `--optimize-mmff94 / --no-optimize-mmff94`: Enable/disable MMFF94 with protein fixed (default: enabled)
 - `--mmff-max-iterations INTEGER`: Max MMFF94 iterations (default: 300)
+- `--remove-after-optim / --no-remove-after-optim`: After MMFF94, remove waters that fail post-checks (default: enabled)
+  - Also accepted: `--remove_after_optim / --no_remove_after_optim`
 
 Recommended usage:
 - Prefer interactive/manual cavity and water-count selection over `--auto-select`. Auto-selection often overfills cavities with too many waters.
 - Keep `--optimize-mmff94` enabled (recommended) to refine water placement after Monte Carlo sampling.
+- Use `--no-remove-after-optim` if you want to keep all waters after MMFF94, even if they clash or move out of cavity bounds.
 
 ### Examples
 
@@ -163,7 +166,7 @@ This repository includes GitHub Actions workflow at `.github/workflows/ci-cd.yml
 - Runs `pytest` on every push to `main`
 - Runs `pytest` on every pull request targeting `main`
 - Builds package distributions after tests pass
-- Publishes to PyPI only when you push a version tag like `v0.1.1`
+- Publishes to PyPI only on pushes to `main` where `pyproject.toml` `project.version` changed
 
 #### One-time setup for automatic PyPI publishing
 
@@ -183,14 +186,7 @@ No PyPI API token secret is needed when using Trusted Publishing.
    - `pyproject.toml` (`project.version`)
    - `cavefiller/__init__.py` (`__version__`)
 2. Commit and push to `main`.
-3. Create and push a matching tag:
-
-```bash
-git tag v0.1.1
-git push origin v0.1.1
-```
-
-The workflow validates that the tag matches `pyproject.toml` (for example, tag `v0.1.1` must match version `0.1.1`) before publishing.
+3. CI will publish that pushed version to PyPI automatically, but only if `pyproject.toml` version changed versus the previous commit on `main`.
 
 ## License
 

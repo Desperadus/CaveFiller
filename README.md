@@ -155,6 +155,41 @@ black cavefiller/
 ruff check cavefiller/
 ```
 
+### Automated CI/CD and PyPI Publishing
+
+This repository includes GitHub Actions workflow at `.github/workflows/ci-cd.yml` that:
+- Runs `pytest` on every push to `main`
+- Runs `pytest` on every pull request targeting `main`
+- Builds package distributions after tests pass
+- Publishes to PyPI only when you push a version tag like `v0.1.1`
+
+#### One-time setup for automatic PyPI publishing
+
+1. Create a PyPI account at https://pypi.org and create your project once (or publish once manually so the name exists).
+2. In PyPI, open your project settings and add a **Trusted Publisher**:
+   - Owner: your GitHub username/org
+   - Repository: `Desperadus/CaveFiller`
+   - Workflow name: `CI/CD`
+   - Environment: leave empty (unless you choose to use one)
+3. In GitHub, ensure Actions are enabled for the repository.
+
+No PyPI API token secret is needed when using Trusted Publishing.
+
+#### Releasing a new version
+
+1. Bump version in both:
+   - `pyproject.toml` (`project.version`)
+   - `cavefiller/__init__.py` (`__version__`)
+2. Commit and push to `main`.
+3. Create and push a matching tag:
+
+```bash
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+The workflow validates that the tag matches `pyproject.toml` (for example, tag `v0.1.1` must match version `0.1.1`) before publishing.
+
 ## License
 
 See LICENSE file for details.

@@ -167,41 +167,6 @@ pip install -e ".[dev]"
 pytest
 ```
 
-### Code Formatting
-
-```bash
-black cavefiller/
-ruff check cavefiller/
-```
-
-### Automated CI/CD and PyPI Publishing
-
-This repository includes GitHub Actions workflow at `.github/workflows/ci-cd.yml` that:
-- Runs `pytest` on every push to `main`
-- Runs `pytest` on every pull request targeting `main`
-- Builds package distributions after tests pass
-- Publishes to PyPI only on pushes to `main` where `pyproject.toml` `project.version` changed
-
-#### One-time setup for automatic PyPI publishing
-
-1. Create a PyPI account at https://pypi.org and create your project once (or publish once manually so the name exists).
-2. In PyPI, open your project settings and add a **Trusted Publisher**:
-   - Owner: your GitHub username/org
-   - Repository: `Desperadus/CaveFiller`
-   - Workflow name: `CI/CD`
-   - Environment: leave empty (unless you choose to use one)
-3. In GitHub, ensure Actions are enabled for the repository.
-
-No PyPI API token secret is needed when using Trusted Publishing.
-
-#### Releasing a new version
-
-1. Bump version in both:
-   - `pyproject.toml` (`project.version`)
-   - `cavefiller/__init__.py` (`__version__`)
-2. Commit and push to `main`.
-3. CI will publish that pushed version to PyPI automatically, but only if `pyproject.toml` version changed versus the previous commit on `main`.
-
 ## License
 
 See LICENSE file for details.

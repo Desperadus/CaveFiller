@@ -18,6 +18,20 @@ A Python tool to find and fill protein cavities with water molecules using KVFin
 
 ### Install CaveFiller
 
+You can install this via pip by running:
+
+```bash
+pip install cavefiller
+```
+
+Or install it from here - from source to get the newest version:
+
+```bash
+pip install git+https://github.com/Desperadus/CaveFiller
+```
+
+alternatively
+
 ```bash
 # Clone the repository
 git clone https://github.com/Desperadus/CaveFiller.git
@@ -65,13 +79,13 @@ cavefiller [PROTEIN_FILE] [OPTIONS]
 - `--waters-per-cavity TEXT`: Comma-separated list of water counts (e.g., '10,15,20'), must match cavity-ids order
 - `--optimize-mmff94 / --no-optimize-mmff94`: Enable/disable MMFF94 with protein fixed (default: enabled)
 - `--mmff-max-iterations INTEGER`: Max MMFF94 iterations (default: 300)
-- `--remove-after-optim / --no-remove-after-optim`: After MMFF94, remove waters that fail post-checks (default: enabled)
+- `--remove-after-optim / --no-remove-after-optim`: After MMFF94, remove waters that fail post-checks (these chacks are fairly harsh so I actually recommend to use no-remove) (default: enabled)
   - Also accepted: `--remove_after_optim / --no_remove_after_optim`
 
 Recommended usage:
 - Prefer interactive/manual cavity and water-count selection over `--auto-select`. Auto-selection often overfills cavities with too many waters.
 - Keep `--optimize-mmff94` enabled (recommended) to refine water placement after Monte Carlo sampling.
-- Use `--no-remove-after-optim` if you want to keep all waters after MMFF94, even if they clash or move out of cavity bounds.
+- Use `--no-remove-after-optim` if you want to keep all waters after MMFF94.
 
 ### Examples
 

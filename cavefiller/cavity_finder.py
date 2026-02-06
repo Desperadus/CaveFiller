@@ -4,6 +4,9 @@ import os
 from typing import List, Dict, Tuple, Any
 import numpy as np
 
+# Grid spacing for cavity detection (in Angstroms)
+DEFAULT_GRID_STEP = 0.6
+
 
 def find_cavities(
     protein_file: str,
@@ -19,7 +22,7 @@ def find_cavities(
         protein_file: Path to the protein PDB file
         probe_in: Probe In radius for cavity detection (Å)
         probe_out: Probe Out radius for cavity detection (Å)
-        volume_cutoff: Minimum cavity volume to consider (Å³)
+        volume_cutoff: Minimum cavity volume to consider (Ų)
         output_dir: Directory to save cavity detection results
         
     Returns:
@@ -37,7 +40,7 @@ def find_cavities(
         input=protein_file,
         probe_in=probe_in,
         probe_out=probe_out,
-        step=0.6,  # Grid step size
+        step=DEFAULT_GRID_STEP,  # Grid step size
         volume_cutoff=volume_cutoff,
     )
     
@@ -98,8 +101,7 @@ def get_cavity_grid_points(cavity_data: Any, cavity_id: int) -> np.ndarray:
     if hasattr(cavity_data, 'surface') and hasattr(cavity_data.surface, 'P1'):
         # P1 is the origin, step is the grid spacing
         origin = np.array([cavity_data.surface.P1[i] for i in range(3)])
-        step = 0.6  # Default grid step
-        real_coords = origin + points * step
+        real_coords = origin + points * DEFAULT_GRID_STEP
         return real_coords
     
     return points

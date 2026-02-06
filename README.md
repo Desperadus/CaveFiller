@@ -55,7 +55,7 @@ cavefiller [PROTEIN_FILE] [OPTIONS]
 - `--output-dir PATH`: Directory to save output files (default: `./output`)
 - `--probe-in FLOAT`: Probe In radius for cavity detection in Ångströms (default: 1.4)
 - `--probe-out FLOAT`: Probe Out radius for cavity detection in Ångströms (default: 4.0)
-- `--volume-cutoff FLOAT`: Minimum cavity volume to consider in ų (default: 5.0)
+- `--volume-cutoff FLOAT`: Minimum cavity volume to consider in Ų (default: 5.0)
 - `--auto-select`: Automatically select all cavities without user interaction
 - `--cavity-ids TEXT`: Comma-separated list of cavity IDs to fill (e.g., '1,2,3')
 

@@ -7,6 +7,13 @@ from typing import List, Dict, Any
 from pathlib import Path
 import numpy as np
 
+# Estimated number of water molecules per 1000 cubic angstroms of cavity volume
+# This is a rough approximation based on water density
+WATERS_PER_1000_CUBIC_ANGSTROMS = 30
+
+# Maximum number of water molecules to place per cavity (for simple placement)
+MAX_WATERS_PER_CAVITY = 50
+
 
 def fill_cavities_with_water(
     protein_file: str,
@@ -117,8 +124,8 @@ def create_packmol_input(
     # Calculate total number of water molecules to add
     total_waters = 0
     for region in cavity_regions:
-        # Estimate: ~30 water molecules per 1000 ų
-        n_waters = max(1, int(region["volume"] / 30))
+        # Estimate number of waters based on cavity volume
+        n_waters = max(1, int(region["volume"] / WATERS_PER_1000_CUBIC_ANGSTROMS))
         total_waters += n_waters
     
     input_lines = [
@@ -136,7 +143,7 @@ def create_packmol_input(
     
     # Add water molecules for each cavity
     for i, region in enumerate(cavity_regions):
-        n_waters = max(1, int(region["volume"] / 30))
+        n_waters = max(1, int(region["volume"] / WATERS_PER_1000_CUBIC_ANGSTROMS))
         min_coords = region["min"]
         max_coords = region["max"]
         
@@ -214,7 +221,7 @@ def fill_with_simple_placement(
         
         # Sample points from the cavity (not too dense)
         # Take every Nth point to avoid overcrowding
-        step = max(1, len(points) // 50)  # Max ~50 waters per cavity
+        step = max(1, len(points) // MAX_WATERS_PER_CAVITY)
         sampled_points = points[::step]
         
         for point in sampled_points:

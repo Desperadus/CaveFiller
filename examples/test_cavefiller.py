@@ -102,7 +102,7 @@ def test_cavefiller():
         if cavities:
             print(f"✅ Found {len(cavities)} cavities")
             for cavity in cavities:
-                print(f"   - Cavity {cavity['id']}: Volume={cavity['volume']:.2f} ų, Area={cavity['area']:.2f} ų")
+                print(f"   - Cavity {cavity['id']}: Volume={cavity['volume']:.2f} Ų, Area={cavity['area']:.2f} ų")
         else:
             print("❌ No cavities found")
             print("\nNote: The test protein may be too small or the cavity detection")

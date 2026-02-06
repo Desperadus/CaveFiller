@@ -4,8 +4,7 @@ This directory contains example files and scripts to demonstrate CaveFiller func
 
 ## Files
 
-- `protein_with_cavity.pdb`: A synthetic protein structure with an internal cavity, ideal for testing
-- `sample_protein.pdb`: A small sample protein structure (may be too small for cavity detection)
+- `musM_OBP5_model_0_boltz2.pdb`: Example Mus OBP5 structure for cavity filling tests
 - `test_cavefiller.py`: A comprehensive test script that demonstrates the full workflow
 
 ## Running the Test Script
@@ -15,9 +14,9 @@ python examples/test_cavefiller.py
 ```
 
 This will:
-1. Create a test protein with a cavity
+1. Load the provided Mus OBP5 example protein
 2. Run cavity detection
-3. Auto-select all cavities
+3. Select cavities and set water counts
 4. Fill cavities with water molecules
 5. Display results
 
@@ -26,32 +25,42 @@ This will:
 ### Example 1: Interactive Mode
 
 ```bash
-cavefiller examples/protein_with_cavity.pdb --output-dir examples/output
+cavefiller examples/musM_OBP5_model_0_boltz2.pdb --output-dir examples/output
 ```
 
 This will prompt you to select which cavities to fill.
 
-### Example 2: Auto-select All Cavities
+### Example 2: Auto-select All Cavities (not generally recommended)
 
 ```bash
-cavefiller examples/protein_with_cavity.pdb --auto-select --output-dir examples/output
+cavefiller examples/musM_OBP5_model_0_boltz2.pdb --auto-select --output-dir examples/output
 ```
 
 ### Example 3: Select Specific Cavities
 
 ```bash
-cavefiller examples/protein_with_cavity.pdb --cavity-ids "1,2,3" --output-dir examples/output
+cavefiller examples/musM_OBP5_model_0_boltz2.pdb --cavity-ids "1,2,3" --output-dir examples/output
 ```
 
 ### Example 4: Custom Detection Parameters
 
 ```bash
-cavefiller examples/protein_with_cavity.pdb \
+cavefiller examples/musM_OBP5_model_0_boltz2.pdb \
   --probe-in 1.2 \
   --probe-out 5.0 \
   --volume-cutoff 10.0 \
-  --auto-select
+  --cavity-ids "1,2"
 ```
+
+### Example 5: Recommended Manual Selection + MMFF94
+
+```bash
+cavefiller examples/musM_OBP5_model_0_boltz2.pdb --output-dir examples/output
+```
+
+Notes:
+- Prefer manual cavity selection and manual water counts. `--auto-select` often places too many waters.
+- Keep MMFF94 optimization enabled (`--optimize-mmff94`, default) for better final geometries.
 
 ## Expected Output
 
@@ -62,6 +71,4 @@ The tool will create the following files in the output directory:
 
 ## Notes
 
-- If Packmol is not installed, the tool will fall back to a simple grid-based water placement method
-- The synthetic test protein creates a hollow box structure that reliably has detectable cavities
 - Real protein structures from PDB can be downloaded and used with this tool

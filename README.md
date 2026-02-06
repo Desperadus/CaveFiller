@@ -5,7 +5,7 @@ A Python tool to find and fill protein cavities with water molecules using KVFin
 ## Features
 
 -  **Cavity Detection**: Uses pyKVFinder to detect cavities in protein structures
--  **Interactive Selection**: Select specific cavities to fill or auto-select all
+-  **Interactive Selection**: Select specific cavities to fill with user-defined water counts
 -  **Monte Carlo Sampling**: Places water molecules using Monte Carlo sampling with clash detection
 -  **Explicit Waters**: Builds full H-O-H waters with RDKit (including hydrogens)
 -  **CLI Interface**: Easy-to-use command-line interface built with Typer
@@ -64,6 +64,10 @@ cavefiller [PROTEIN_FILE] [OPTIONS]
 - `--optimize-mmff94 / --no-optimize-mmff94`: Enable/disable MMFF94 with protein fixed (default: enabled)
 - `--mmff-max-iterations INTEGER`: Max MMFF94 iterations (default: 300)
 
+Recommended usage:
+- Prefer interactive/manual cavity and water-count selection over `--auto-select`. Auto-selection often overfills cavities with too many waters.
+- Keep `--optimize-mmff94` enabled (recommended) to refine water placement after Monte Carlo sampling.
+
 ### Examples
 
 **Interactive cavity and water selection:**
@@ -71,7 +75,7 @@ cavefiller [PROTEIN_FILE] [OPTIONS]
 cavefiller protein.pdb --output-dir results
 ```
 
-**Auto-select all cavities with default water counts:**
+**Auto-select all cavities with default water counts (not generally recommended):**
 ```bash
 cavefiller protein.pdb --auto-select
 ```

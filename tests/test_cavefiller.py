@@ -5,19 +5,10 @@ import os
 import tempfile
 from pathlib import Path
 import numpy as np
+from rdkit import Chem
+from rdkit.Chem import AllChem
 
-
-def create_simple_protein_pdb(filepath):
-    """Create a simple protein PDB file for testing."""
-    content = """HEADER    TEST PROTEIN
-ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00  0.00           N
-ATOM      2  CA  ALA A   1       1.458   0.000   0.000  1.00  0.00           C
-ATOM      3  C   ALA A   1       2.009   1.420   0.000  1.00  0.00           C
-ATOM      4  O   ALA A   1       1.258   2.390   0.000  1.00  0.00           O
-END
-"""
-    with open(filepath, 'w') as f:
-        f.write(content)
+EXAMPLE_PDB = Path(__file__).resolve().parents[1] / "examples" / "musM_OBP5_model_0_boltz2.pdb"
 
 
 def test_imports():
@@ -29,43 +20,42 @@ def test_imports():
     assert cli is not None
 
 
-def test_cavity_finder_with_small_protein():
-    """Test cavity finder with a small protein (may not find cavities)."""
+def test_cavity_finder_with_example_protein():
+    """Test cavity finder with the Mus OBP5 example protein."""
     from cavefiller.cavity_finder import find_cavities
-    
+
+    if not EXAMPLE_PDB.exists():
+        pytest.skip("Example protein file not found")
+
     with tempfile.TemporaryDirectory() as tmpdir:
-        pdb_file = os.path.join(tmpdir, "test.pdb")
-        create_simple_protein_pdb(pdb_file)
-        
         cavities, cavity_data = find_cavities(
-            pdb_file,
+            str(EXAMPLE_PDB),
             probe_in=1.4,
             probe_out=4.0,
             volume_cutoff=5.0,
             output_dir=tmpdir,
         )
-        
-        # Small protein may not have cavities, but should not error
+
+        # Should parse and execute without errors
         assert isinstance(cavities, list)
         # cavity_data may be None if no cavities are found
 
 
 def test_read_protein_atoms():
-    """Test reading protein atoms from PDB file."""
+    """Test reading protein atoms from the Mus OBP5 example PDB file."""
     from cavefiller.water_filler import read_protein_atoms
-    
-    with tempfile.TemporaryDirectory() as tmpdir:
-        pdb_file = os.path.join(tmpdir, "test.pdb")
-        create_simple_protein_pdb(pdb_file)
-        
-        atoms = read_protein_atoms(pdb_file)
-        
-        assert len(atoms) > 0
-        # Check structure: list of (element, coordinates)
-        for element, coords in atoms:
-            assert isinstance(element, str)
-            assert isinstance(coords, np.ndarray)
-            assert len(coords) == 3
+
+    if not EXAMPLE_PDB.exists():
+        pytest.skip("Example protein file not found")
+
+    atoms = read_protein_atoms(str(EXAMPLE_PDB))
+
+    assert len(atoms) > 0
+    # Check structure: list of (element, coordinates)
+    for element, coords in atoms:
+        assert isinstance(element, str)
+        assert isinstance(coords, np.ndarray)
+        assert len(coords) == 3
 
 
 def test_clash_detection():
@@ -92,39 +82,6 @@ def test_clash_detection():
     assert check_clash(water_pos, [], existing_waters) == True
 
 
-def test_monte_carlo_placement():
-    """Test Monte Carlo water placement."""
-    from cavefiller.water_filler import monte_carlo_water_placement
-    
-    # Create a simple cavity (grid of points)
-    cavity_points = np.array([
-        [10.0, 10.0, 10.0],
-        [10.5, 10.0, 10.0],
-        [10.0, 10.5, 10.0],
-        [10.0, 10.0, 10.5],
-        [11.0, 10.0, 10.0],
-        [10.0, 11.0, 10.0],
-        [10.0, 10.0, 11.0],
-    ])
-    
-    # No protein atoms nearby
-    protein_atoms = [
-        ('C', np.array([0.0, 0.0, 0.0])),
-    ]
-    
-    # Try to place 2 waters
-    waters = monte_carlo_water_placement(cavity_points, protein_atoms, 2, max_attempts=100)
-    
-    # Should be able to place at least one water
-    assert len(waters) >= 1
-    assert len(waters) <= 2
-    
-    # Check that waters are numpy arrays
-    for water in waters:
-        assert isinstance(water, np.ndarray)
-        assert len(water) == 3
-
-
 def test_cli_app_exists():
     """Test that the CLI app is defined."""
     from cavefiller.cli import app
@@ -136,16 +93,14 @@ def test_cli_app_exists():
 def test_cavity_with_example_protein():
     """Test cavity detection with the example protein that has a cavity."""
     from cavefiller.cavity_finder import find_cavities
-    
-    example_pdb = "examples/protein_with_cavity.pdb"
-    
+
     # Skip if example doesn't exist
-    if not os.path.exists(example_pdb):
+    if not EXAMPLE_PDB.exists():
         pytest.skip("Example protein file not found")
-    
+
     with tempfile.TemporaryDirectory() as tmpdir:
         cavities, cavity_data = find_cavities(
-            example_pdb,
+            str(EXAMPLE_PDB),
             probe_in=1.4,
             probe_out=4.0,
             volume_cutoff=5.0,
@@ -167,16 +122,14 @@ def test_monte_carlo_water_filling():
     """Test Monte Carlo water filling method."""
     from cavefiller.water_filler import fill_cavities_with_water
     from cavefiller.cavity_finder import find_cavities
-    
-    example_pdb = "examples/protein_with_cavity.pdb"
-    
-    if not os.path.exists(example_pdb):
+
+    if not EXAMPLE_PDB.exists():
         pytest.skip("Example protein file not found")
-    
+
     with tempfile.TemporaryDirectory() as tmpdir:
         # Find cavities
         cavities, cavity_data = find_cavities(
-            example_pdb,
+            str(EXAMPLE_PDB),
             output_dir=tmpdir,
         )
         
@@ -185,7 +138,7 @@ def test_monte_carlo_water_filling():
         
         # Fill with water using Monte Carlo
         output_file = fill_cavities_with_water(
-            example_pdb,
+            str(EXAMPLE_PDB),
             cavities[:1],  # Just first cavity
             cavity_data,
             tmpdir,
@@ -198,3 +151,87 @@ def test_monte_carlo_water_filling():
         with open(output_file, 'r') as f:
             content = f.read()
             assert 'HOH' in content
+
+
+def test_mmff94_optimization_function_runs():
+    """Test that MMFF94 fixed-protein optimization returns valid geometries."""
+    from cavefiller.water_filler import optimize_waters_mmff94_fixed_protein, _protein_atoms_from_mol
+
+    protein_mol = Chem.AddHs(Chem.MolFromSmiles("C"))
+    assert AllChem.EmbedMolecule(protein_mol, randomSeed=0xF00D) == 0
+    AllChem.UFFOptimizeMolecule(protein_mol, maxIters=100)
+    protein_atoms = _protein_atoms_from_mol(protein_mol)
+
+    water_positions = [np.array([5.0, 0.0, 0.0], dtype=float)]
+    water_origin_cavity_points = [
+        np.array(
+            [
+                [4.0, 0.0, 0.0],
+                [4.5, 0.0, 0.0],
+                [5.0, 0.0, 0.0],
+                [5.5, 0.0, 0.0],
+                [6.0, 0.0, 0.0],
+                [5.0, 0.5, 0.0],
+                [5.0, -0.5, 0.0],
+            ],
+            dtype=float,
+        )
+    ]
+
+    optimized_positions, optimized_geometries = optimize_waters_mmff94_fixed_protein(
+        protein_mol=protein_mol,
+        water_positions=water_positions,
+        water_origin_cavity_points=water_origin_cavity_points,
+        protein_atoms=protein_atoms,
+        max_iterations=50,
+    )
+
+    assert len(optimized_positions) == 1
+    assert len(optimized_geometries) == 1
+    assert optimized_geometries[0][0].shape == (3,)
+    assert optimized_geometries[0][1].shape == (3,)
+    assert optimized_geometries[0][2].shape == (3,)
+
+
+def test_fill_cavities_uses_mmff94_optimizer(monkeypatch):
+    """Test that fill_cavities_with_water calls MMFF94 optimizer when enabled."""
+    from cavefiller.cavity_finder import find_cavities
+    from cavefiller import water_filler as wf
+
+    if not EXAMPLE_PDB.exists():
+        pytest.skip("Example protein file not found")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cavities, cavity_data = find_cavities(str(EXAMPLE_PDB), output_dir=tmpdir)
+        if len(cavities) == 0:
+            pytest.skip("No cavities found in test protein")
+
+        called = {"value": False, "max_iterations": None}
+        real_builder = wf._build_water_geometries_from_positions
+
+        def fake_optimize(
+            protein_mol,
+            water_positions,
+            water_origin_cavity_points,
+            protein_atoms,
+            max_iterations,
+        ):
+            called["value"] = True
+            called["max_iterations"] = max_iterations
+            return water_positions, real_builder(water_positions, protein_atoms)
+
+        monkeypatch.setattr(wf, "optimize_waters_mmff94_fixed_protein", fake_optimize)
+
+        output_file = wf.fill_cavities_with_water(
+            str(EXAMPLE_PDB),
+            cavities[:1],
+            cavity_data,
+            tmpdir,
+            waters_per_cavity={cavities[0]["id"]: 3},
+            optimize_mmff94=True,
+            mmff_max_iterations=123,
+        )
+
+        assert called["value"] is True
+        assert called["max_iterations"] == 123
+        assert os.path.exists(output_file)

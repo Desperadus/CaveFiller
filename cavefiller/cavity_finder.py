@@ -34,11 +34,11 @@ def find_cavities(
     
     # Run KVFinder to detect cavities
     cavity_data = pyKVFinder.run_workflow(
-        pdb=protein_file,
+        input=protein_file,
         probe_in=probe_in,
         probe_out=probe_out,
         step=0.6,  # Grid step size
-        output=os.path.join(output_dir, "cavities.toml"),
+        volume_cutoff=volume_cutoff,
     )
     
     # Extract cavity information
@@ -49,13 +49,20 @@ def find_cavities(
         volumes = cavity_data.volume
         areas = cavity_data.area if hasattr(cavity_data, 'area') else {}
         
+        # Create mapping from string IDs to integer IDs
+        # KVFinder uses string IDs like 'KAA', 'KAB', etc., but the grid uses integers
+        cavity_id_map = {}
+        for idx, (cavity_str_id, volume) in enumerate(volumes.items(), start=1):
+            cavity_id_map[cavity_str_id] = idx
+        
         # Process each cavity
-        for cavity_id, volume in volumes.items():
+        for cavity_str_id, volume in volumes.items():
             if volume >= volume_cutoff:
                 cavity_info = {
-                    "id": cavity_id,
+                    "id": cavity_id_map[cavity_str_id],
+                    "string_id": cavity_str_id,
                     "volume": volume,
-                    "area": areas.get(cavity_id, 0.0) if areas else 0.0,
+                    "area": areas.get(cavity_str_id, 0.0) if areas else 0.0,
                 }
                 cavities.append(cavity_info)
     
@@ -71,7 +78,7 @@ def get_cavity_grid_points(cavity_data: Any, cavity_id: int) -> np.ndarray:
     
     Args:
         cavity_data: The cavity data object from pyKVFinder
-        cavity_id: ID of the cavity
+        cavity_id: Integer ID of the cavity (1-indexed)
         
     Returns:
         Array of (x, y, z) coordinates for the cavity grid points
@@ -83,12 +90,15 @@ def get_cavity_grid_points(cavity_data: Any, cavity_id: int) -> np.ndarray:
     cavity_grid = cavity_data.cavities
     
     # Find all points belonging to this cavity
+    # Note: KVFinder uses 1-indexed cavity IDs in the grid
     points = np.argwhere(cavity_grid == cavity_id)
     
     # Convert grid indices to real coordinates
-    if hasattr(cavity_data, 'origin') and hasattr(cavity_data, 'step'):
-        origin = np.array(cavity_data.origin)
-        step = cavity_data.step
+    # KVFinder results have P1, P2, P3, P4 attributes for grid parameters
+    if hasattr(cavity_data, 'surface') and hasattr(cavity_data.surface, 'P1'):
+        # P1 is the origin, step is the grid spacing
+        origin = np.array([cavity_data.surface.P1[i] for i in range(3)])
+        step = 0.6  # Default grid step
         real_coords = origin + points * step
         return real_coords
     

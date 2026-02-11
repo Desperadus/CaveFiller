@@ -23,6 +23,10 @@ VDW_RADII = {
 MIN_WATER_WATER_DISTANCE = 2.7
 MIN_WATER_PROTEIN_DISTANCE = 2.35
 MAX_WATER_PROTEIN_DISTANCE = 5.5
+MAX_WATER_TO_CAVITY_DISTANCE = 0.7
+PLACEMENT_JITTER_STD = 0.22
+LOCAL_RELAX_STEP_SIZE = 0.08
+LOCAL_RELAX_MAX_ITERS = 120
 
 # Water geometry
 OH_BOND_LENGTH = 0.9572
@@ -236,24 +240,35 @@ def monte_carlo_water_placement(
     n_waters: int,
     max_attempts: int = 500,
 ) -> List[np.ndarray]:
-    """Place waters by sampling cavity grid points plus small local jitter."""
+    """Place waters by sampling and selecting high-clearance valid candidates."""
     if len(cavity_points) == 0 or n_waters <= 0:
         return []
 
     placed_waters: List[np.ndarray] = []
+    placed_geometries: List[Tuple[np.ndarray, np.ndarray, np.ndarray]] = []
     cavity_points = np.asarray(cavity_points, dtype=float)
     protein_coords = np.asarray([coords for _, coords in protein_atoms], dtype=float)
+    seed_order = np.random.permutation(len(cavity_points))
+    seed_cursor = 0
 
     for _ in range(n_waters):
-        placed = False
+        best_candidate: Optional[np.ndarray] = None
+        best_geometry: Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]] = None
+        best_score = -np.inf
+
         for _attempt in range(max_attempts):
-            base = cavity_points[np.random.randint(0, len(cavity_points))]
-            jitter = np.random.normal(loc=0.0, scale=0.22, size=3)
+            if seed_cursor < len(seed_order):
+                base = cavity_points[seed_order[seed_cursor]]
+                seed_cursor += 1
+                jitter = np.random.normal(loc=0.0, scale=0.06, size=3)
+            else:
+                base = cavity_points[np.random.randint(0, len(cavity_points))]
+                jitter = np.random.normal(loc=0.0, scale=PLACEMENT_JITTER_STD, size=3)
             position = base + jitter
 
             # Keep candidate in/near cavity voxels only.
             nearest = np.min(np.linalg.norm(cavity_points - position, axis=1))
-            if nearest > 0.7:
+            if nearest > MAX_WATER_TO_CAVITY_DISTANCE:
                 continue
 
             # Waters must remain physically close to the protein envelope.
@@ -262,13 +277,26 @@ def monte_carlo_water_placement(
                 continue
 
             if not check_clash(position, protein_atoms, placed_waters):
-                placed_waters.append(position)
-                placed = True
-                break
+                candidate_geometry = _build_single_water_geometry(position, protein_atoms)
+                if _geometry_has_all_atom_clash(
+                    candidate_geometry, protein_atoms, placed_geometries
+                ):
+                    continue
+                candidate_score = _placement_clearance_score(
+                    position=position,
+                    protein_atoms=protein_atoms,
+                    placed_waters=placed_waters,
+                )
+                if candidate_score > best_score:
+                    best_score = candidate_score
+                    best_candidate = position
+                    best_geometry = candidate_geometry
 
-        if not placed:
+        if best_candidate is None or best_geometry is None:
             print(f"    Warning: placed {len(placed_waters)}/{n_waters} waters")
             break
+        placed_waters.append(best_candidate)
+        placed_geometries.append(best_geometry)
 
     return placed_waters
 
@@ -400,6 +428,12 @@ def optimize_waters_mmff94_fixed_protein(
                 )
             )
 
+        optimized_geometries = _relax_water_geometries_locally(
+            geometries=optimized_geometries,
+            water_origin_cavity_points=water_origin_cavity_points,
+            protein_atoms=protein_atoms_for_mmff,
+        )
+
         if not remove_after_optim:
             return [geom[0] for geom in optimized_geometries], optimized_geometries
 
@@ -455,6 +489,130 @@ def _min_allowed_pair_distance(elem_a: str, elem_b: str) -> float:
     return max(2.0, raw)
 
 
+def _placement_clearance_score(
+    position: np.ndarray,
+    protein_atoms: List[Tuple[str, np.ndarray]],
+    placed_waters: List[np.ndarray],
+) -> float:
+    """Score oxygen candidates by the minimum margin to hard distance limits."""
+    protein_margin = np.inf
+    for element, atom_coords in protein_atoms:
+        dist = np.linalg.norm(position - atom_coords)
+        min_dist = max(
+            VDW_RADII.get(element, 1.7) + VDW_RADII["O"] - 0.5,
+            MIN_WATER_PROTEIN_DISTANCE,
+        )
+        protein_margin = min(protein_margin, dist - min_dist)
+
+    water_margin = np.inf
+    for water_pos in placed_waters:
+        water_margin = min(
+            water_margin,
+            np.linalg.norm(position - water_pos) - MIN_WATER_WATER_DISTANCE,
+        )
+    if not placed_waters:
+        water_margin = 1.5
+
+    return float(min(protein_margin, water_margin))
+
+
+def _constrain_to_origin_cavity(
+    candidate: np.ndarray,
+    cavity_points: np.ndarray,
+    protein_coords: np.ndarray,
+) -> np.ndarray:
+    """Keep candidate oxygen close to its origin cavity and protein envelope."""
+    adjusted = np.asarray(candidate, dtype=float)
+    nearest_idx = int(np.argmin(np.linalg.norm(cavity_points - adjusted, axis=1)))
+    nearest_cavity = cavity_points[nearest_idx]
+    delta_cavity = adjusted - nearest_cavity
+    dist_cavity = np.linalg.norm(delta_cavity)
+    if dist_cavity > MAX_WATER_TO_CAVITY_DISTANCE:
+        adjusted = nearest_cavity + delta_cavity * (MAX_WATER_TO_CAVITY_DISTANCE / dist_cavity)
+
+    nearest_protein_idx = int(np.argmin(np.linalg.norm(protein_coords - adjusted, axis=1)))
+    nearest_protein = protein_coords[nearest_protein_idx]
+    vec = adjusted - nearest_protein
+    dist_protein = np.linalg.norm(vec)
+    if dist_protein > MAX_WATER_PROTEIN_DISTANCE:
+        if dist_protein < 1e-8:
+            vec = np.array([1.0, 0.0, 0.0], dtype=float)
+            dist_protein = 1.0
+        adjusted = nearest_protein + vec * ((MAX_WATER_PROTEIN_DISTANCE - 0.05) / dist_protein)
+
+    return adjusted
+
+
+def _relax_water_geometries_locally(
+    geometries: List[Tuple[np.ndarray, np.ndarray, np.ndarray]],
+    water_origin_cavity_points: List[np.ndarray],
+    protein_atoms: List[Tuple[str, np.ndarray]],
+    max_iters: int = LOCAL_RELAX_MAX_ITERS,
+) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """Resolve residual clashes by moving water oxygens with local repulsion."""
+    if not geometries:
+        return []
+
+    oxygen_positions = [np.array(geom[0], dtype=float) for geom in geometries]
+    protein_coords = np.asarray([coords for _, coords in protein_atoms], dtype=float)
+
+    for _ in range(max_iters):
+        max_step = 0.0
+        updated_positions: List[np.ndarray] = []
+        for i, position in enumerate(oxygen_positions):
+            force = np.zeros(3, dtype=float)
+
+            for element, atom_coords in protein_atoms:
+                delta = position - atom_coords
+                dist = np.linalg.norm(delta)
+                if dist < 1e-8:
+                    continue
+                min_dist = max(
+                    VDW_RADII.get(element, 1.7) + VDW_RADII["O"] - 0.5,
+                    MIN_WATER_PROTEIN_DISTANCE,
+                )
+                overlap = min_dist - dist
+                if overlap > 0.0:
+                    force += (overlap / dist) * delta
+
+            for j, other in enumerate(oxygen_positions):
+                if i == j:
+                    continue
+                delta = position - other
+                dist = np.linalg.norm(delta)
+                if dist < 1e-8:
+                    delta = (
+                        np.array([1.0, 0.0, 0.0], dtype=float)
+                        if i < j
+                        else np.array([-1.0, 0.0, 0.0], dtype=float)
+                    )
+                    dist = 1.0
+                overlap = MIN_WATER_WATER_DISTANCE - dist
+                if overlap > 0.0:
+                    force += 0.7 * (overlap / dist) * delta
+
+            step = LOCAL_RELAX_STEP_SIZE * force
+            step_norm = float(np.linalg.norm(step))
+            if step_norm > 0.35:
+                step = step * (0.35 / step_norm)
+                step_norm = 0.35
+
+            candidate = position + step
+            candidate = _constrain_to_origin_cavity(
+                candidate,
+                np.asarray(water_origin_cavity_points[i], dtype=float),
+                protein_coords,
+            )
+            updated_positions.append(candidate)
+            max_step = max(max_step, step_norm)
+
+        oxygen_positions = updated_positions
+        if max_step < 1e-3:
+            break
+
+    return _build_water_geometries_from_positions(oxygen_positions, protein_atoms)
+
+
 def _geometry_has_all_atom_clash(
     geometry: Tuple[np.ndarray, np.ndarray, np.ndarray],
     protein_atoms: List[Tuple[str, np.ndarray]],
@@ -500,18 +658,22 @@ def _select_valid_geometries_after_mmff(
     for optimized_geom, original_geom, origin_cavity in zip(
         optimized_geometries, original_geometries, water_origin_cavity_points
     ):
-        candidates: List[Tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+        candidates: List[Tuple[float, Tuple[np.ndarray, np.ndarray, np.ndarray]]] = []
 
         if _is_position_valid_for_origin(optimized_geom[0], origin_cavity, protein_atoms):
-            candidates.append(optimized_geom)
+            candidates.append(
+                (_geometry_clearance_score(optimized_geom, protein_atoms, accepted), optimized_geom)
+            )
         else:
             reverted_count += 1
 
         if _is_position_valid_for_origin(original_geom[0], origin_cavity, protein_atoms):
-            candidates.append(original_geom)
+            candidates.append(
+                (_geometry_clearance_score(original_geom, protein_atoms, accepted), original_geom)
+            )
 
         chosen = None
-        for candidate in candidates:
+        for _, candidate in sorted(candidates, key=lambda item: item[0], reverse=True):
             if not _geometry_has_all_atom_clash(candidate, protein_atoms, accepted):
                 chosen = candidate
                 break
@@ -531,6 +693,34 @@ def _select_valid_geometries_after_mmff(
         print(f"MMFF94 check: dropped {dropped_count} waters after validation/clash checks")
 
     return accepted
+
+
+def _geometry_clearance_score(
+    geometry: Tuple[np.ndarray, np.ndarray, np.ndarray],
+    protein_atoms: List[Tuple[str, np.ndarray]],
+    accepted_geometries: List[Tuple[np.ndarray, np.ndarray, np.ndarray]],
+) -> float:
+    """Score a water geometry by its tightest all-atom distance margin."""
+    water_atoms = [("O", geometry[0]), ("H", geometry[1]), ("H", geometry[2])]
+    min_margin = np.inf
+
+    for w_elem, w_pos in water_atoms:
+        for p_elem, p_pos in protein_atoms:
+            dist = np.linalg.norm(w_pos - p_pos)
+            min_dist = _min_allowed_pair_distance(w_elem, p_elem)
+            min_margin = min(min_margin, dist - min_dist)
+
+    for accepted in accepted_geometries:
+        accepted_atoms = [("O", accepted[0]), ("H", accepted[1]), ("H", accepted[2])]
+        for w_elem, w_pos in water_atoms:
+            for a_elem, a_pos in accepted_atoms:
+                dist = np.linalg.norm(w_pos - a_pos)
+                min_dist = _min_allowed_pair_distance(w_elem, a_elem)
+                min_margin = min(min_margin, dist - min_dist)
+
+    if np.isinf(min_margin):
+        return 1.5
+    return float(min_margin)
 
 
 def _points_overlap_ratio(points: np.ndarray, box_min: np.ndarray, box_max: np.ndarray) -> float:
@@ -603,20 +793,31 @@ def _build_water_geometries_from_positions(
     protein_atoms: List[Tuple[str, np.ndarray]],
 ) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """Build deterministic H-O-H geometries from oxygen positions."""
-    angle_rad = np.deg2rad(HOH_ANGLE_DEG)
-    cos_t = np.cos(angle_rad)
-    sin_t = np.sin(angle_rad)
     protein_coords = np.asarray([coords for _, coords in protein_atoms], dtype=float)
 
     geometries: List[Tuple[np.ndarray, np.ndarray, np.ndarray]] = []
     for oxygen in water_positions:
-        o = np.asarray(oxygen, dtype=float)
-        u = _principal_direction_from_protein(o, protein_coords)
-        v = _orthonormal_perpendicular(u)
-        h1 = o + OH_BOND_LENGTH * u
-        h2 = o + OH_BOND_LENGTH * (cos_t * u + sin_t * v)
-        geometries.append((o, h1, h2))
+        geometries.append(_build_single_water_geometry(oxygen, protein_atoms, protein_coords))
     return geometries
+
+
+def _build_single_water_geometry(
+    oxygen: np.ndarray,
+    protein_atoms: List[Tuple[str, np.ndarray]],
+    protein_coords: Optional[np.ndarray] = None,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Build one deterministic H-O-H geometry from an oxygen position."""
+    angle_rad = np.deg2rad(HOH_ANGLE_DEG)
+    cos_t = np.cos(angle_rad)
+    sin_t = np.sin(angle_rad)
+    if protein_coords is None:
+        protein_coords = np.asarray([coords for _, coords in protein_atoms], dtype=float)
+    o = np.asarray(oxygen, dtype=float)
+    u = _principal_direction_from_protein(o, protein_coords)
+    v = _orthonormal_perpendicular(u)
+    h1 = o + OH_BOND_LENGTH * u
+    h2 = o + OH_BOND_LENGTH * (cos_t * u + sin_t * v)
+    return (o, h1, h2)
 
 
 def build_waters_mol(

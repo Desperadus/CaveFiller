@@ -23,7 +23,7 @@ dependencies = [
 [project.optional-dependencies]
 openmm = [
     "openmm>=8.1.1",
-    "pdbfixer @ git+https://github.com/openmm/pdbfixer.git",
+    "pdbfixer",
 ]
 dev = [
     "pytest>=7.0.0",

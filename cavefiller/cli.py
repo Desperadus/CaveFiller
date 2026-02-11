@@ -12,7 +12,7 @@ from cavefiller.cavity_finder import (
     DEFAULT_VOLUME_CUTOFF,
 )
 from cavefiller.cavity_selector import select_cavities
-from cavefiller.water_filler import fill_cavities_with_water
+from cavefiller.water_filler import fill_cavities_with_water, is_openmm_available
 
 app = typer.Typer(help="CaveFiller - Find and fill protein cavities with water molecules")
 
@@ -67,18 +67,28 @@ def run(
         "--optimize-mmff94/--no-optimize-mmff94",
         help="Run MMFF94 after placement with protein atoms fixed and waters movable.",
     ),
+    optimize_openmm: bool = typer.Option(
+        False,
+        "--optimize-openmm/--no-optimize-openmm",
+        help="Run OpenMM minimization for waters with protein restrained (takes precedence over MMFF94).",
+    ),
+    cuda: bool = typer.Option(
+        False,
+        "--cuda/--no-cuda",
+        help="When using OpenMM optimization, require CUDA platform (fails if CUDA is unavailable).",
+    ),
     mmff_max_iterations: int = typer.Option(
         300,
         help="Maximum MMFF94 iterations when optimization is enabled.",
     ),
-    remove_after_optim: bool = typer.Option(
-        True,
-        "--remove-after-optim/--no-remove-after-optim",
-        "--remove_after_optim/--no_remove_after_optim",
-        help=(
-            "After MMFF94, remove waters that fail cavity/clash validation. "
-            "Disable to keep all optimized waters."
-        ),
+    openmm_max_iterations: int = typer.Option(
+        500,
+        help="Maximum OpenMM minimization iterations when OpenMM optimization is enabled.",
+    ),
+    keep_all: bool = typer.Option(
+        False,
+        "--keep-all",
+        help="Keep all optimized waters (skip post-optimization clash-based dropping).",
     ),
 ):
     """
@@ -88,7 +98,7 @@ def run(
     1. Detects cavities in the protein using KVFinder
     2. Allows user to select which cavities to fill
     3. Uses cavity-grid Monte Carlo sampling to place water oxygens
-    4. Optionally runs MMFF94 with protein fixed and waters movable
+    4. Optionally runs OpenMM (or MMFF94) with protein fixed/restrained and waters movable
     5. Builds explicit RDKit H-O-H waters and writes a combined PDB
     """
     typer.echo(f"🔍 Analyzing protein: {protein_file}")
@@ -154,7 +164,22 @@ def run(
     
     # Step 3: Fill cavities with water
     typer.echo("\nStep 3: Filling cavities with water using Monte Carlo sampling...")
-    typer.echo("         (with clash detection, optional fixed-protein MMFF94, and RDKit HOH generation)")
+    typer.echo(
+        "         (with clash detection, optional fixed-protein OpenMM/MMFF94, and RDKit HOH generation)"
+    )
+
+    openmm_installed = is_openmm_available()
+    optimize_openmm_effective = optimize_openmm
+    if not optimize_openmm and optimize_mmff94 and openmm_installed:
+        optimize_openmm_effective = True
+        typer.echo("Info: OpenMM detected; preferring OpenMM optimization over MMFF94.")
+    if optimize_openmm and not openmm_installed:
+        optimize_openmm_effective = False
+        if optimize_mmff94:
+            typer.echo("Warning: OpenMM requested but not installed; falling back to MMFF94.")
+        else:
+            typer.echo("Warning: OpenMM requested but not installed; optimization disabled.")
+
     output_file = fill_cavities_with_water(
         str(protein_file),
         selected_cavities,
@@ -162,8 +187,11 @@ def run(
         str(output_dir),
         waters_per_cavity=waters_dict,
         optimize_mmff94=optimize_mmff94,
+        optimize_openmm=optimize_openmm_effective,
+        openmm_use_cuda=cuda,
         mmff_max_iterations=mmff_max_iterations,
-        remove_after_optim=remove_after_optim,
+        openmm_max_iterations=openmm_max_iterations,
+        keep_all=keep_all,
     )
     
     typer.echo(f"\n✅ Success! Output saved to: {output_file}")

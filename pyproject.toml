@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cavefiller"
-version = "0.3.1"
+version = "0.4.0"
 description = "A tool to find and fill protein cavities with water molecules using KVFinder and Packmol"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -21,6 +21,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+openmm = [
+    "openmm>=8.1.1",
+    "pdbfixer @ git+https://github.com/openmm/pdbfixer.git",
+]
 dev = [
     "pytest>=7.0.0",
     "black>=22.0.0",

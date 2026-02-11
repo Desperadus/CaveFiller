@@ -238,8 +238,64 @@ def test_fill_cavities_uses_mmff94_optimizer(monkeypatch):
         assert os.path.exists(output_file)
 
 
-def test_fill_cavities_passes_remove_after_optim_flag(monkeypatch):
-    """Test that fill_cavities_with_water forwards remove_after_optim to MMFF stage."""
+def test_fill_cavities_uses_openmm_optimizer_when_enabled(monkeypatch):
+    """Test that fill_cavities_with_water calls OpenMM optimizer when enabled."""
+    from cavefiller.cavity_finder import find_cavities
+    from cavefiller import water_filler as wf
+
+    if not EXAMPLE_PDB.exists():
+        pytest.skip("Example protein file not found")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cavities, cavity_data = find_cavities(str(EXAMPLE_PDB), output_dir=tmpdir)
+        if len(cavities) == 0:
+            pytest.skip("No cavities found in test protein")
+
+        called = {"value": False, "max_iterations": None}
+        def fake_openmm_optimize(
+            protein_mol,
+            protein_file,
+            water_geometries,
+            protein_atoms,
+            max_iterations,
+            remove_after_optim,
+            use_cuda,
+        ):
+            called["value"] = True
+            called["protein_mol_atoms"] = protein_mol.GetNumAtoms()
+            called["protein_file"] = protein_file
+            called["max_iterations"] = max_iterations
+            called["use_cuda"] = use_cuda
+            return [geom[0] for geom in water_geometries], water_geometries
+
+        def fake_mmff_optimize(*args, **kwargs):
+            raise AssertionError("MMFF optimizer should not be used when OpenMM is enabled")
+
+        monkeypatch.setattr(wf, "optimize_waters_openmm_fixed_protein", fake_openmm_optimize)
+        monkeypatch.setattr(wf, "optimize_waters_mmff94_fixed_protein", fake_mmff_optimize)
+
+        output_file = wf.fill_cavities_with_water(
+            str(EXAMPLE_PDB),
+            cavities[:1],
+            cavity_data,
+            tmpdir,
+            waters_per_cavity={cavities[0]["id"]: 3},
+            optimize_mmff94=True,
+            optimize_openmm=True,
+            openmm_max_iterations=77,
+            openmm_use_cuda=True,
+        )
+
+        assert called["value"] is True
+        assert called["protein_mol_atoms"] > 0
+        assert called["protein_file"] == str(EXAMPLE_PDB)
+        assert called["max_iterations"] == 77
+        assert called["use_cuda"] is True
+        assert os.path.exists(output_file)
+
+
+def test_fill_cavities_keep_all_sets_mmff_drop_behavior(monkeypatch):
+    """Test that keep_all toggles MMFF post-optimization dropping behavior."""
     from cavefiller.cavity_finder import find_cavities
     from cavefiller import water_filler as wf
 
@@ -274,7 +330,7 @@ def test_fill_cavities_passes_remove_after_optim_flag(monkeypatch):
             tmpdir,
             waters_per_cavity={cavities[0]["id"]: 2},
             optimize_mmff94=True,
-            remove_after_optim=False,
+            keep_all=True,
         )
 
         assert called["remove_after_optim"] is False

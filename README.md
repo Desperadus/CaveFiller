@@ -39,6 +39,18 @@ cd CaveFiller
 pip install -e .
 ```
 
+Install with OpenMM support:
+
+```bash
+pip install -e ".[openmm]"
+```
+
+Using `uv` (recommended for lock-managed environments):
+
+```bash
+uv sync --extra openmm
+```
+
 ## Usage
 
 ### Basic Usage
@@ -77,13 +89,17 @@ cavefiller [PROTEIN_FILE] [OPTIONS]
 - `--waters-per-cavity TEXT`: Comma-separated list of water counts (e.g., '10,15,20'), must match cavity-ids order
 - `--optimize-mmff94 / --no-optimize-mmff94`: Enable/disable MMFF94 with protein fixed - Note IT IS VERY SLOW ON BIGGER COMPLEXES (default: enabled)
 - `--mmff-max-iterations INTEGER`: Max MMFF94 iterations (default: 300)
-- `--remove-after-optim / --no-remove-after-optim`: After MMFF94, remove waters that fail post-checks (these chacks are fairly harsh so I actually recommend to use no-remove) (default: enabled)
-  - Also accepted: `--remove_after_optim / --no_remove_after_optim`
+- `--optimize-openmm / --no-optimize-openmm`: Enable/disable OpenMM minimization with AMBER14/TIP3P and standard energy minimization; protein atoms are fixed by zero mass (takes precedence over MMFF94 when active)
+- `--cuda / --no-cuda`: When OpenMM is enabled, require CUDA platform (fails if unavailable) (default: disabled)
+- `--openmm-max-iterations INTEGER`: Max OpenMM minimization iterations (default: 500)
+- `--keep-all`: Keep all optimized waters (skip post-optimization clash-based dropping) (default: disabled)
 
 Recommended usage:
 - Prefer interactive/manual cavity and water-count selection over `--auto-select`. Auto-selection often overfills cavities with too many waters.
-- Keep `--optimize-mmff94` enabled (recommended) to refine water placement after Monte Carlo sampling.
-- Use `--no-remove-after-optim` if you want to keep all waters after MMFF94.
+- If OpenMM is installed and MMFF94 optimization is enabled, CaveFiller will prefer OpenMM automatically.
+- Use `--optimize-openmm` if OpenMM is installed and you want stronger relaxation of residual clashes.
+- Otherwise keep `--optimize-mmff94` enabled to refine water placement after Monte Carlo sampling.
+- Use `--keep-all` if you want to keep all waters after OpenMM/MMFF94.
 
 ### Examples
 
@@ -155,14 +171,15 @@ The tool generates the following files in the output directory:
 - **rdkit**: Molecular manipulation and explicit water generation
 - **numpy**: Numerical operations
 - **biopython**: PDB file handling
+- **openmm** (optional extra): OpenMM minimization with optional pdbfixer fallback for topology repair
 
 ## Development
 
 ### Running Tests
 
 ```bash
-pip install -e ".[dev]"
-pytest
+uv sync --group dev
+uv run pytest
 ```
 
 ## License

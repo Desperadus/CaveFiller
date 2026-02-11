@@ -1,6 +1,7 @@
 """Fill selected cavities with explicit water molecules using RDKit."""
 
 import os
+import tempfile
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -32,6 +33,17 @@ LOCAL_RELAX_MAX_ITERS = 120
 OH_BOND_LENGTH = 0.9572
 HOH_ANGLE_DEG = 104.52
 DEFAULT_MMFF_MAX_ITERS = 300
+DEFAULT_OPENMM_MAX_ITERS = 500
+
+
+def is_openmm_available() -> bool:
+    """Return True when OpenMM can be imported in the current environment."""
+    try:
+        import openmm  # type: ignore  # noqa: F401
+
+        return True
+    except Exception:
+        return False
 
 
 def _run_mmff_with_progress(ff: Any, max_iterations: int) -> None:
@@ -81,8 +93,11 @@ def fill_cavities_with_water(
     output_dir: str,
     waters_per_cavity: Dict[int, int] = None,
     optimize_mmff94: bool = True,
+    optimize_openmm: bool = False,
+    openmm_use_cuda: bool = False,
     mmff_max_iterations: int = DEFAULT_MMFF_MAX_ITERS,
-    remove_after_optim: bool = True,
+    openmm_max_iterations: int = DEFAULT_OPENMM_MAX_ITERS,
+    keep_all: bool = False,
 ) -> str:
     """Place explicit waters in selected cavities and write a combined PDB."""
     base_name = os.path.splitext(os.path.basename(protein_file))[0]
@@ -147,21 +162,68 @@ def fill_cavities_with_water(
         Chem.MolToPDBFile(combined, output_file)
         print(f"Saved non-optimized structure: {output_file}")
 
-        if optimize_mmff94 and all_water_origin_cavity_points:
+        if optimize_openmm and all_water_origin_cavity_points:
+            original_count = len(all_water_positions)
+            optimized_positions, optimized_geometries = optimize_waters_openmm_fixed_protein(
+                protein_mol=protein_mol,
+                protein_file=protein_file,
+                water_geometries=nonoptimized_geometries,
+                protein_atoms=protein_atoms,
+                max_iterations=openmm_max_iterations,
+                remove_after_optim=not keep_all,
+                use_cuda=openmm_use_cuda,
+            )
+            if optimized_positions:
+                if not keep_all:
+                    print(
+                        f"OpenMM (fixed protein) kept {len(optimized_positions)}/"
+                        f"{original_count} waters after filtering"
+                    )
+                    removed_count = original_count - len(optimized_positions)
+                    if removed_count > 0:
+                        print(
+                            "Note: waters were removed by post-optimization clash checks. "
+                            "Use --keep-all to disable this behavior."
+                        )
+                else:
+                    print(
+                        f"OpenMM (fixed protein) kept all {len(optimized_positions)} waters "
+                        "without post-optimization filtering"
+                    )
+                optimized_waters_mol = build_waters_mol(
+                    water_positions=[],
+                    chain_id="W",
+                    water_geometries=optimized_geometries,
+                )
+                optimized_combined = Chem.CombineMols(protein_mol, optimized_waters_mol)
+                Chem.MolToPDBFile(optimized_combined, optimized_output_file)
+                print(f"Saved optimized structure: {optimized_output_file}")
+                all_water_positions = optimized_positions
+                output_file = optimized_output_file
+            else:
+                print("Warning: OpenMM step yielded no valid waters, keeping initial placement")
+        elif optimize_mmff94 and all_water_origin_cavity_points:
+            original_count = len(all_water_positions)
             optimized_positions, optimized_geometries = optimize_waters_mmff94_fixed_protein(
                 protein_mol=protein_mol,
                 water_positions=all_water_positions,
                 water_origin_cavity_points=all_water_origin_cavity_points,
                 protein_atoms=protein_atoms,
                 max_iterations=mmff_max_iterations,
-                remove_after_optim=remove_after_optim,
+                remove_after_optim=not keep_all,
             )
             if optimized_positions:
-                if remove_after_optim:
+                if not keep_all:
                     print(
                         f"MMFF94 (fixed protein) kept {len(optimized_positions)}/"
-                        f"{len(all_water_positions)} waters after filtering"
+                        f"{original_count} waters after filtering"
                     )
+                    removed_count = original_count - len(optimized_positions)
+                    if removed_count > 0:
+                        print(
+                            "Note: waters were removed by post-optimization clash checks. "
+                            "Use --keep-all to disable this behavior."
+                        )
                 else:
                     print(
                         f"MMFF94 (fixed protein) kept all {len(optimized_positions)} waters "
@@ -319,6 +381,11 @@ def _protein_atoms_from_mol(mol: Chem.Mol) -> List[Tuple[str, np.ndarray]]:
 def _prepare_protein_for_mmff(protein_mol: Chem.Mol) -> Chem.Mol:
     """Prepare protein for MMFF and attempt explicit hydrogenation."""
     mol = Chem.Mol(protein_mol)
+    try:
+        # Avoid duplicating explicit hydrogens if the input already contains them.
+        mol = Chem.RemoveHs(mol, sanitize=False)
+    except Exception:
+        pass
     mol.UpdatePropertyCache(strict=False)
     try:
         Chem.GetSymmSSSR(mol)
@@ -450,6 +517,242 @@ def optimize_waters_mmff94_fixed_protein(
             water_positions, protein_atoms
         )
         return water_positions, fallback_geometries
+
+
+def optimize_waters_openmm_fixed_protein(
+    protein_mol: Chem.Mol,
+    protein_file: str,
+    water_geometries: List[Tuple[np.ndarray, np.ndarray, np.ndarray]],
+    protein_atoms: List[Tuple[str, np.ndarray]],
+    max_iterations: int = DEFAULT_OPENMM_MAX_ITERS,
+    remove_after_optim: bool = True,
+    use_cuda: bool = False,
+) -> Tuple[List[np.ndarray], List[Tuple[np.ndarray, np.ndarray, np.ndarray]]]:
+    """OpenMM optimize waters using AMBER with only added waters movable."""
+    if not water_geometries:
+        return [], []
+
+    try:
+        import openmm  # type: ignore
+        from openmm import app  # type: ignore
+        from openmm import unit  # type: ignore
+    except Exception:
+        print("Warning: OpenMM not installed; skipping OpenMM optimization")
+        return [geom[0] for geom in water_geometries], water_geometries
+
+    tmp_rdkit_h_file: Optional[str] = None
+    try:
+        forcefield = app.ForceField("amber14-all.xml", "amber14/tip3p.xml")
+        topology = None
+        positions = None
+
+        # 1) Try as-is first.
+        try:
+            topology, positions = _load_openmm_topology_positions(
+                protein_file, forcefield, allow_pdbfixer_fallback=False
+            )
+        except Exception:
+            pass
+
+        # 2) If needed, try pdbfixer repair first.
+        if topology is None or positions is None:
+            try:
+                topology, positions = _load_openmm_topology_positions(
+                    protein_file, forcefield, allow_pdbfixer_fallback=True
+                )
+            except Exception:
+                pass
+
+        # 3) Last resort: RDKit-hydrogenated protein.
+        if topology is None or positions is None:
+            tmp_rdkit_h_file = _write_rdkit_hydrogenated_pdb(protein_mol)
+            if tmp_rdkit_h_file:
+                topology, positions = _load_openmm_topology_positions(
+                    tmp_rdkit_h_file, forcefield, allow_pdbfixer_fallback=False
+                )
+
+        modeller = app.Modeller(topology, positions)
+        waters_topology, waters_positions = _build_openmm_water_bundle(water_geometries)
+        first_added_atom_idx = modeller.topology.getNumAtoms()
+        modeller.add(waters_topology, waters_positions)
+        added_water_atom_count = len(waters_positions)
+        added_water_indices = set(
+            range(first_added_atom_idx, first_added_atom_idx + added_water_atom_count)
+        )
+
+        system = _create_openmm_system(forcefield, modeller.topology)
+
+        # Freeze every non-added atom by setting mass to zero.
+        for atom in modeller.topology.atoms():
+            if atom.index not in added_water_indices:
+                system.setParticleMass(atom.index, 0.0 * unit.dalton)
+
+        integrator = openmm.LangevinMiddleIntegrator(
+            300.0 * unit.kelvin,
+            1.0 / unit.picosecond,
+            0.002 * unit.picoseconds,
+        )
+        if use_cuda:
+            platform = openmm.Platform.getPlatformByName("CUDA")
+            context = openmm.Context(system, integrator, platform)
+        else:
+            context = openmm.Context(system, integrator)
+        context.setPositions(modeller.positions)
+
+        openmm.LocalEnergyMinimizer.minimize(context, maxIterations=max_iterations)
+        state = context.getState(getPositions=True)
+        minimized_ang = state.getPositions(asNumpy=True).value_in_unit(unit.angstrom)
+
+        optimized_geometries: List[Tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+        water_atoms: List[np.ndarray] = []
+        for atom_idx in range(first_added_atom_idx, first_added_atom_idx + added_water_atom_count):
+            water_atoms.append(np.array(minimized_ang[atom_idx], dtype=float))
+
+        for i in range(0, added_water_atom_count, 3):
+            if i + 2 >= len(water_atoms):
+                break
+            optimized_geometries.append((water_atoms[i], water_atoms[i + 1], water_atoms[i + 2]))
+
+        if not remove_after_optim:
+            return [geom[0] for geom in optimized_geometries], optimized_geometries
+
+        selected_geometries = _drop_clashing_optimized_geometries(
+            optimized_geometries=optimized_geometries,
+            protein_atoms=protein_atoms,
+        )
+        return [geom[0] for geom in selected_geometries], selected_geometries
+    except Exception as exc:
+        if use_cuda:
+            raise RuntimeError(
+                f"OpenMM CUDA optimization was requested but failed: {exc}"
+            ) from exc
+        print(f"Warning: OpenMM optimization failed ({exc}); keeping initial placement")
+        return [geom[0] for geom in water_geometries], water_geometries
+    finally:
+        if tmp_rdkit_h_file and os.path.exists(tmp_rdkit_h_file):
+            try:
+                os.remove(tmp_rdkit_h_file)
+            except Exception:
+                pass
+
+
+def _write_rdkit_hydrogenated_pdb(protein_mol: Chem.Mol) -> Optional[str]:
+    """Create temporary PDB from RDKit-hydrogenated protein."""
+    try:
+        protein_h = _prepare_protein_for_mmff(protein_mol)
+    except Exception:
+        return None
+
+    with tempfile.NamedTemporaryFile(suffix=".pdb", prefix="cavefiller_openmm_", delete=False) as fh:
+        tmp_path = fh.name
+    Chem.MolToPDBFile(protein_h, tmp_path)
+    return tmp_path
+
+
+def _build_openmm_water_bundle(
+    water_geometries: List[Tuple[np.ndarray, np.ndarray, np.ndarray]]
+) -> Tuple[Any, Any]:
+    """Build OpenMM topology/positions for explicit water molecules."""
+    from openmm import app  # type: ignore
+
+    waters_mol = build_waters_mol(
+        water_positions=[],
+        chain_id="W",
+        water_geometries=water_geometries,
+    )
+    with tempfile.NamedTemporaryFile(
+        suffix=".pdb", prefix="cavefiller_openmm_waters_", delete=False
+    ) as fh:
+        tmp_path = fh.name
+    try:
+        Chem.MolToPDBFile(waters_mol, tmp_path)
+        water_pdb = app.PDBFile(tmp_path)
+        return water_pdb.topology, water_pdb.positions
+    finally:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+
+
+def _load_openmm_topology_positions(
+    pdb_file: str,
+    forcefield: Any,
+    allow_pdbfixer_fallback: bool = True,
+) -> Tuple[Any, Any]:
+    """Load topology/positions and repair with pdbfixer only when needed."""
+    from openmm import app  # type: ignore
+
+    pdb = app.PDBFile(pdb_file)
+    topology = pdb.topology
+    positions = pdb.positions
+
+    # Fast path: topology already parameterizable (e.g., after RDKit hydrogenation).
+    try:
+        _create_openmm_system(forcefield, topology)
+        return topology, positions
+    except Exception:
+        if not allow_pdbfixer_fallback:
+            raise
+
+    try:
+        from pdbfixer import PDBFixer  # type: ignore
+    except Exception:
+        # PDBFixer not installed: keep original failure behavior.
+        raise
+
+    fixer = PDBFixer(filename=pdb_file)
+    fixer.findMissingResidues()
+    fixer.findMissingAtoms()
+    fixer.addMissingAtoms()
+    fixer.addMissingHydrogens(7.0)
+    return fixer.topology, fixer.positions
+
+
+def _guess_amber_residue_templates(topology: Any) -> Dict[Any, str]:
+    """Provide residue template hints for AMBER matching on imperfect protein topologies."""
+    residue_templates: Dict[Any, str] = {}
+
+    sulfur_bonds: Dict[Any, List[Any]] = {}
+    for atom1, atom2 in topology.bonds():
+        sulfur_bonds.setdefault(atom1, []).append(atom2)
+        sulfur_bonds.setdefault(atom2, []).append(atom1)
+
+    for residue in topology.residues():
+        if residue.name != "CYS":
+            continue
+        sg_atom = None
+        for atom in residue.atoms():
+            if atom.name.strip() == "SG":
+                sg_atom = atom
+                break
+        if sg_atom is None:
+            continue
+
+        is_disulfide = False
+        for neighbor in sulfur_bonds.get(sg_atom, []):
+            if neighbor.name.strip() == "SG" and neighbor.residue != residue:
+                is_disulfide = True
+                break
+        if is_disulfide:
+            residue_templates[residue] = "CYX"
+
+    return residue_templates
+
+
+def _create_openmm_system(forcefield: Any, topology: Any) -> Any:
+    """Create OpenMM system, preferring full external-bond checks when possible."""
+    from openmm import app  # type: ignore
+
+    common_kwargs = dict(
+        nonbondedMethod=app.NoCutoff,
+        constraints=None,
+        rigidWater=False,
+    )
+    try:
+        return forcefield.createSystem(topology, ignoreExternalBonds=False, **common_kwargs)
+    except Exception:
+        return forcefield.createSystem(topology, ignoreExternalBonds=True, **common_kwargs)
 
 
 def _is_position_valid_for_origin(
@@ -691,6 +994,58 @@ def _select_valid_geometries_after_mmff(
         )
     if dropped_count:
         print(f"MMFF94 check: dropped {dropped_count} waters after validation/clash checks")
+
+    return accepted
+
+
+def _select_nonclashing_geometries(
+    optimized_geometries: List[Tuple[np.ndarray, np.ndarray, np.ndarray]],
+    original_geometries: List[Tuple[np.ndarray, np.ndarray, np.ndarray]],
+    protein_atoms: List[Tuple[str, np.ndarray]],
+) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """Select non-clashing geometries without enforcing cavity-origin constraints."""
+    accepted: List[Tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+    dropped_count = 0
+
+    for optimized_geom, original_geom in zip(optimized_geometries, original_geometries):
+        candidates = [
+            (_geometry_clearance_score(optimized_geom, protein_atoms, accepted), optimized_geom),
+            (_geometry_clearance_score(original_geom, protein_atoms, accepted), original_geom),
+        ]
+
+        chosen = None
+        for _, candidate in sorted(candidates, key=lambda item: item[0], reverse=True):
+            if not _geometry_has_all_atom_clash(candidate, protein_atoms, accepted):
+                chosen = candidate
+                break
+
+        if chosen is None:
+            dropped_count += 1
+            continue
+        accepted.append(chosen)
+
+    if dropped_count:
+        print(f"OpenMM check: dropped {dropped_count} waters after clash checks")
+
+    return accepted
+
+
+def _drop_clashing_optimized_geometries(
+    optimized_geometries: List[Tuple[np.ndarray, np.ndarray, np.ndarray]],
+    protein_atoms: List[Tuple[str, np.ndarray]],
+) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """Keep OpenMM-minimized waters, dropping only geometries that still clash."""
+    accepted: List[Tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+    dropped_count = 0
+
+    for geometry in optimized_geometries:
+        if _geometry_has_all_atom_clash(geometry, protein_atoms, accepted):
+            dropped_count += 1
+            continue
+        accepted.append(geometry)
+
+    if dropped_count:
+        print(f"OpenMM check: dropped {dropped_count} waters after clash checks")
 
     return accepted
 

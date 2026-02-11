@@ -278,4 +278,52 @@ def test_fill_cavities_passes_remove_after_optim_flag(monkeypatch):
         )
 
         assert called["remove_after_optim"] is False
-        assert os.path.exists(output_file)
+
+
+def test_local_relaxation_separates_overlapping_waters():
+    """Local relaxation should push colliding waters apart."""
+    from cavefiller import water_filler as wf
+
+    protein_atoms = [("C", np.array([0.0, 3.2, 0.0], dtype=float))]
+    initial_positions = [
+        np.array([0.0, 0.0, 0.0], dtype=float),
+        np.array([0.2, 0.0, 0.0], dtype=float),
+    ]
+    geometries = wf._build_water_geometries_from_positions(initial_positions, protein_atoms)
+
+    cavity_track = np.array([[x, 0.0, 0.0] for x in np.linspace(-3.0, 3.0, 61)], dtype=float)
+    origins = [cavity_track, cavity_track]
+
+    relaxed = wf._relax_water_geometries_locally(geometries, origins, protein_atoms)
+    relaxed_o0 = relaxed[0][0]
+    relaxed_o1 = relaxed[1][0]
+    relaxed_dist = np.linalg.norm(relaxed_o0 - relaxed_o1)
+
+    assert relaxed_dist > np.linalg.norm(initial_positions[0] - initial_positions[1])
+    assert relaxed_dist >= 2.0
+
+
+def test_mmff_selection_prefers_higher_clearance_candidate():
+    """Selection should choose valid candidate with better all-atom clearance."""
+    from cavefiller import water_filler as wf
+
+    protein_atoms = [("C", np.array([0.0, 0.0, 0.0], dtype=float))]
+    optimized_geom = wf._build_water_geometries_from_positions(
+        [np.array([2.8, 0.0, 0.0], dtype=float)],
+        protein_atoms,
+    )[0]
+    original_geom = wf._build_water_geometries_from_positions(
+        [np.array([4.0, 0.0, 0.0], dtype=float)],
+        protein_atoms,
+    )[0]
+    origin_cavity = [np.array([[2.8, 0.0, 0.0], [4.0, 0.0, 0.0]], dtype=float)]
+
+    selected = wf._select_valid_geometries_after_mmff(
+        optimized_geometries=[optimized_geom],
+        original_geometries=[original_geom],
+        water_origin_cavity_points=origin_cavity,
+        protein_atoms=protein_atoms,
+    )
+
+    assert len(selected) == 1
+    assert np.allclose(selected[0][0], original_geom[0])

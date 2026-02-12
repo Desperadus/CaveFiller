@@ -79,13 +79,15 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Check whether pyproject version changed
+      - name: Check whether pyproject version differs from PyPI
         id: version_gate
         run: |
           python - <<'PY'
+          import json
           import os
           import pathlib
-          import subprocess
+          import urllib.error
+          import urllib.request
           import sys
 
           if sys.version_info < (3, 11):
@@ -94,29 +96,51 @@ jobs:
           import tomllib
 
           pyproject = pathlib.Path("pyproject.toml")
-          current_version = tomllib.loads(pyproject.read_text())["project"]["version"]
+          project = tomllib.loads(pyproject.read_text())["project"]
+          package_name = project["name"]
+          current_version = project["version"]
+
+          pypi_url = f"https://pypi.org/pypi/{package_name}/json"
+          pypi_latest_version = None
+          release_exists = False
 
           try:
-              previous_text = subprocess.check_output(
-                  ["git", "show", "HEAD^:pyproject.toml"],
-                  text=True,
-              )
-              previous_version = tomllib.loads(previous_text)["project"]["version"]
-          except subprocess.CalledProcessError:
-              previous_version = None
+              with urllib.request.urlopen(pypi_url) as response:
+                  data = json.load(response)
+              pypi_latest_version = data["info"]["version"]
+              release_exists = current_version in data.get("releases", {})
+          except urllib.error.HTTPError as exc:
+              if exc.code != 404:
+                  raise
 
           output_file = pathlib.Path(os.environ["GITHUB_OUTPUT"])
           with output_file.open("a", encoding="utf-8") as f:
-              if previous_version is None:
-                  f.write("changed=false\n")
-                  print("No previous commit available to compare; skipping publish.")
-              elif previous_version != current_version:
+              if pypi_latest_version is None:
                   f.write("changed=true\n")
                   f.write(f"version={current_version}\n")
-                  print(f"Version changed: {previous_version} -> {current_version}. Publishing enabled.")
+                  print(
+                      f"Package {package_name} is not on PyPI yet. "
+                      f"Publishing version {current_version}."
+                  )
+              elif release_exists:
+                  f.write("changed=false\n")
+                  print(
+                      f"Version {current_version} already exists on PyPI "
+                      f"(latest: {pypi_latest_version}). Skipping publish."
+                  )
+              elif pypi_latest_version != current_version:
+                  f.write("changed=true\n")
+                  f.write(f"version={current_version}\n")
+                  print(
+                      f"PyPI latest is {pypi_latest_version}; pyproject has "
+                      f"{current_version}. Publishing enabled."
+                  )
               else:
                   f.write("changed=false\n")
-                  print(f"Version unchanged ({current_version}); skipping publish.")
+                  print(
+                      f"PyPI latest already matches pyproject version "
+                      f"({current_version}). Skipping publish."
+                  )
           PY
 
       - name: Build distributions
@@ -127,7 +151,7 @@ jobs:
 
       - name: Publish summary
         if: steps.version_gate.outputs.changed == 'false'
-        run: echo "Skipping PyPI publish because pyproject.toml version did not change on this push."
+        run: echo "Skipping PyPI publish because this pyproject.toml version already exists on PyPI."
 
       - name: Publish package distributions to PyPI
         if: steps.version_gate.outputs.changed == 'true'

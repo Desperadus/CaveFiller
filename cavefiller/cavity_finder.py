@@ -49,7 +49,7 @@ def find_cavities(
         probe_out: Probe Out radius for cavity detection (Å)
         step: Grid spacing for cavity detection (Å)
         removal_distance: Exterior trim distance for cavity detection (Å)
-        volume_cutoff: Minimum cavity volume to consider (Ų)
+        volume_cutoff: Minimum cavity volume to consider (A)
         output_dir: Directory to save cavity detection results
         
     Returns:

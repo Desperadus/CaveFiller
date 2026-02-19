@@ -18,7 +18,7 @@ def select_cavities(cavities: List[Dict[str, Any]], prompt_for_waters: bool = Tr
     print("\n" + "=" * 60)
     print("Available Cavities:")
     print("=" * 60)
-    print(f"{'ID':<6} {'Volume (Ų)':<15} {'Area (ų)':<15}")
+    print(f"{'ID':<6} {'Volume (A^3)':<15} {'Area (A^2)':<15}")
     print("-" * 60)
     
     for cavity in cavities:

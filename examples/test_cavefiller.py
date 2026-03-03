@@ -2,6 +2,7 @@
 
 import sys
 import os
+import pytest
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -9,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from cavefiller.cavity_finder import find_cavities
 from cavefiller.water_filler import fill_cavities_with_water
 
+@pytest.mark.heavy
 def test_cavefiller():
     """Test the CaveFiller pipeline."""
     

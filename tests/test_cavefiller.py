@@ -20,6 +20,7 @@ def test_imports():
     assert cli is not None
 
 
+@pytest.mark.heavy
 def test_cavity_finder_with_example_protein():
     """Test cavity finder with the Mus OBP5 example protein."""
     from cavefiller.cavity_finder import find_cavities
@@ -41,6 +42,7 @@ def test_cavity_finder_with_example_protein():
         # cavity_data may be None if no cavities are found
 
 
+@pytest.mark.heavy
 def test_read_protein_atoms():
     """Test reading protein atoms from the Mus OBP5 example PDB file."""
     from cavefiller.water_filler import read_protein_atoms
@@ -90,6 +92,7 @@ def test_cli_app_exists():
     assert isinstance(app, typer.Typer)
 
 
+@pytest.mark.heavy
 def test_cavity_with_example_protein():
     """Test cavity detection with the example protein that has a cavity."""
     from cavefiller.cavity_finder import find_cavities
@@ -118,6 +121,7 @@ def test_cavity_with_example_protein():
             assert cavity['volume'] >= 5.0
 
 
+@pytest.mark.heavy
 def test_monte_carlo_water_filling():
     """Test Monte Carlo water filling method."""
     from cavefiller.water_filler import fill_cavities_with_water
@@ -193,6 +197,7 @@ def test_mmff94_optimization_function_runs():
     assert optimized_geometries[0][2].shape == (3,)
 
 
+@pytest.mark.heavy
 def test_fill_cavities_uses_mmff94_optimizer(monkeypatch):
     """Test that fill_cavities_with_water calls MMFF94 optimizer when enabled."""
     from cavefiller.cavity_finder import find_cavities
@@ -238,6 +243,7 @@ def test_fill_cavities_uses_mmff94_optimizer(monkeypatch):
         assert os.path.exists(output_file)
 
 
+@pytest.mark.heavy
 def test_fill_cavities_uses_openmm_optimizer_when_enabled(monkeypatch):
     """Test that fill_cavities_with_water calls OpenMM optimizer when enabled."""
     from cavefiller.cavity_finder import find_cavities
@@ -294,6 +300,7 @@ def test_fill_cavities_uses_openmm_optimizer_when_enabled(monkeypatch):
         assert os.path.exists(output_file)
 
 
+@pytest.mark.heavy
 def test_fill_cavities_keep_all_sets_mmff_drop_behavior(monkeypatch):
     """Test that keep_all toggles MMFF post-optimization dropping behavior."""
     from cavefiller.cavity_finder import find_cavities

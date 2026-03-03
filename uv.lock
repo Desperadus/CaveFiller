@@ -295,7 +295,7 @@ wheels = [
 
 [[package]]
 name = "cavefiller"
-version = "0.3.1"
+version = "0.4.1"
 source = { editable = "." }
 dependencies = [
     { name = "biopython", version = "1.83", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
@@ -342,7 +342,7 @@ requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=22.0.0" },
     { name = "numpy", specifier = ">=1.20.0" },
     { name = "openmm", marker = "extra == 'openmm'", specifier = ">=8.1.1" },
-    { name = "pdbfixer", marker = "extra == 'openmm'", git = "https://github.com/openmm/pdbfixer.git" },
+    { name = "pdbfixer", marker = "extra == 'openmm'" },
     { name = "pykvfinder", specifier = ">=0.6.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "rdkit", specifier = ">=2022.9.1" },
@@ -1781,7 +1781,7 @@ wheels = [
 [[package]]
 name = "pdbfixer"
 version = "1.12.0"
-source = { git = "https://github.com/openmm/pdbfixer.git#94cfa4c0ca551cdc5f13320f9a658efd59f2b881" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "legacy-cgi", marker = "python_full_version >= '3.13'" },
     { name = "numpy", version = "1.24.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
@@ -1790,6 +1790,7 @@ dependencies = [
     { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "openmm" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/da/bd/394c3185e4b9fbacf803651a374e99e597d3411d316784f8ea6d8fc17af5/pdbfixer-1.12.0.tar.gz", hash = "sha256:82e54074b33eb00270e9a439c8633fcf82cd3ab7a36561b01425a260c0fc4143", size = 665893, upload-time = "2026-02-06T19:11:22.323Z" }
 
 [[package]]
 name = "pillow"

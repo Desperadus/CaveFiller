@@ -25,7 +25,7 @@ def run(
         help="Path to the protein PDB file",
     ),
     output_dir: Path = typer.Option(
-        Path("./output"),
+        Path("./cavefiller_output"),
         help="Directory to save output files",
     ),
     grid_step: float = typer.Option(

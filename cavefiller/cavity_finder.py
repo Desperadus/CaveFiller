@@ -38,7 +38,7 @@ def find_cavities(
     step: float = DEFAULT_GRID_STEP,
     removal_distance: float = DEFAULT_EXTERIOR_TRIM_DISTANCE,
     volume_cutoff: float = DEFAULT_VOLUME_CUTOFF,
-    output_dir: str = "./output",
+    output_dir: str = "./cavefiller_output",
 ) -> Tuple[List[Dict[str, Any]], Any]:
     """
     Find cavities in a protein structure using pyKVFinder.

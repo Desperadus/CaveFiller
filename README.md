@@ -3,10 +3,13 @@
 A Python tool to find and fill protein cavities with water molecules using KVFinder, Monte Carlo sampling, and RDKit-based explicit water generation.
 <img width="2309" height="720" alt="cavefiller_wokflow" src="https://github.com/user-attachments/assets/59a5db85-da03-4936-b400-fe926ec60830" />
 
-ities to fill with user-defined water counts
 -  **Monte Carlo Sampling**: Places water molecules using Monte Carlo sampling with clash detection
 -  **Explicit Waters**: Builds full H-O-H waters with RDKit (including hydrogens)
 -  **CLI Interface**: Easy-to-use command-line interface built with Typer
+
+## Disclaimer
+
+This package was developed as part of my diploma thesis, and there is no official paper/citation for it.
 
 ## Installation
 
@@ -192,7 +195,3 @@ If you use CaveFiller in your research, please cite:
 
 - pyKVFinder: Guerra et al. (2020) BMC Bioinformatics
 - RDKit: RDKit: Open-source cheminformatics; http://www.rdkit.org
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
